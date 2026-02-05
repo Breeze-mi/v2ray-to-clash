@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { invoke } from '@tauri-apps/api/core';
-import type { AppState, ConvertRequest, ConvertResult, PresetConfig, NodePreviewItem } from '../types';
+import type { AppState, ConvertRequest, ConvertResult, PresetConfig, ParseNodesResult } from '../types';
 
 export const useAppStore = defineStore('app', {
   state: (): AppState => ({
@@ -18,6 +18,7 @@ export const useAppStore = defineStore('app', {
     error: null,
     result: null,
     previewNodes: [],
+    previewSubscriptionInfo: null,
     presets: [],
   }),
 
@@ -39,7 +40,6 @@ export const useAppStore = defineStore('app', {
       try {
         this.presets = await invoke<PresetConfig[]>('get_preset_configs');
       } catch (e) {
-        console.error('Failed to load presets:', e);
         this.error = String(e);
       }
     },
@@ -69,10 +69,6 @@ export const useAppStore = defineStore('app', {
         };
 
         this.result = await invoke<ConvertResult>('convert_subscription', { request });
-
-        if (this.result.warnings.length > 0) {
-          console.warn('Conversion warnings:', this.result.warnings);
-        }
       } catch (e) {
         this.error = String(e);
       } finally {
@@ -99,13 +95,16 @@ export const useAppStore = defineStore('app', {
       this.previewing = true;
       this.error = null;
       this.previewNodes = [];
+      this.previewSubscriptionInfo = null;
 
       try {
-        this.previewNodes = await invoke<NodePreviewItem[]>('parse_nodes', {
+        const result = await invoke<ParseNodesResult>('parse_nodes', {
           content: this.subscription,
           include_regex: this.includeRegex || null,
           exclude_regex: this.excludeRegex || null,
         });
+        this.previewNodes = result.nodes;
+        this.previewSubscriptionInfo = result.subscription_info || null;
       } catch (e) {
         this.error = String(e);
       } finally {
@@ -130,6 +129,7 @@ export const useAppStore = defineStore('app', {
       this.customUserAgent = '';
       this.result = null;
       this.previewNodes = [];
+      this.previewSubscriptionInfo = null;
       this.error = null;
     },
   },

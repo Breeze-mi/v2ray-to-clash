@@ -10,6 +10,7 @@ import {
   NTooltip,
   NIcon,
   NSwitch,
+  NProgress,
   type SelectOption,
 } from 'naive-ui';
 import { HelpCircleOutline, RefreshOutline, EyeOutline } from '@vicons/ionicons5';
@@ -28,6 +29,43 @@ const presetOptions = computed<SelectOption[]>(() => [
 const includeError = ref<string | null>(null);
 const excludeError = ref<string | null>(null);
 const renameError = ref<string | null>(null);
+
+// Format bytes to human readable string
+function formatBytes(bytes: number | undefined): string {
+  if (bytes === undefined || bytes === null) return '-';
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+// Format timestamp to date string
+function formatExpire(timestamp: number | undefined): string {
+  if (timestamp === undefined || timestamp === null) return '-';
+  if (timestamp === 0) return '永不过期';
+  const date = new Date(timestamp * 1000);
+  return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
+}
+
+// Subscription info computed
+const subInfo = computed(() => {
+  const info = store.previewSubscriptionInfo;
+  if (!info) return null;
+
+  const used = (info.upload || 0) + (info.download || 0);
+  const total = info.total || 0;
+  const percentage = total > 0 ? Math.round((used / total) * 100) : 0;
+
+  return {
+    used: formatBytes(used),
+    total: formatBytes(total),
+    upload: formatBytes(info.upload),
+    download: formatBytes(info.download),
+    expire: formatExpire(info.expire),
+    percentage,
+  };
+});
 
 async function validateIncludeRegex() {
   if (!store.includeRegex) {
@@ -240,6 +278,32 @@ async function validateRenameRegex() {
 
     <!-- Node Preview -->
     <div v-if="store.hasPreview" class="preview-section">
+      <!-- Subscription Info -->
+      <div v-if="subInfo" class="subscription-info">
+        <div class="sub-info-header">
+          <span class="section-title">订阅信息</span>
+          <span class="sub-expire">到期: {{ subInfo.expire }}</span>
+        </div>
+        <div class="sub-info-traffic">
+          <div class="traffic-labels">
+            <span>已用: {{ subInfo.used }}</span>
+            <span>总量: {{ subInfo.total }}</span>
+          </div>
+          <NProgress
+            type="line"
+            :percentage="subInfo.percentage"
+            :indicator-placement="'inside'"
+            :height="20"
+            :border-radius="4"
+            :status="subInfo.percentage > 90 ? 'error' : subInfo.percentage > 70 ? 'warning' : 'success'"
+          />
+          <div class="traffic-detail">
+            <span>上传: {{ subInfo.upload }}</span>
+            <span>下载: {{ subInfo.download }}</span>
+          </div>
+        </div>
+      </div>
+
       <div class="preview-header">
         <span class="section-title">节点预览</span>
         <span class="preview-count">{{ store.previewNodes.length }} 个节点</span>
@@ -346,7 +410,46 @@ async function validateRenameRegex() {
 .preview-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
+}
+
+.subscription-info {
+  background: var(--card-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.sub-info-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.sub-expire {
+  font-size: 12px;
+  color: var(--text-color-3);
+}
+
+.sub-info-traffic {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.traffic-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-color-2);
+}
+
+.traffic-detail {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-color-3);
 }
 
 .preview-header {

@@ -45,10 +45,6 @@ tokio = { version = "1", features = ["full"] }
 
 # Error handling
 thiserror = "2"
-anyhow = "1"
-
-# UUID generation for VMess
-uuid = { version = "1", features = ["v4", "serde"] }
 
 # URL encoding/decoding
 urlencoding = "2"

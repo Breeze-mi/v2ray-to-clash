@@ -50,10 +50,9 @@ pub fn parse_subscription_content(content: &str) -> Result<Vec<Node>> {
         }
     }
 
-    // Log warnings for debugging
-    for warning in &warnings {
-        eprintln!("Warning: Skipped invalid link - {}", warning);
-    }
+    // Warnings are collected but not printed to avoid stderr pollution
+    // In future, could be returned alongside nodes or logged via proper logging crate
+    let _ = &warnings; // Suppress unused warning while keeping collection for error context
 
     // Only fail if we found no valid nodes at all
     if nodes.is_empty() && !warnings.is_empty() {

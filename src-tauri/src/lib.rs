@@ -12,6 +12,7 @@ pub mod http_client;
 pub mod engine;
 
 use engine::{ConvertRequest, ConvertResult, PresetConfig, SubscriptionEngine};
+use http_client::SubscriptionInfo;
 use serde::Serialize;
 
 // ============================================================================
@@ -25,6 +26,13 @@ pub struct NodePreviewItem {
     pub protocol: String,
     pub server: String,
     pub port: u16,
+}
+
+/// Result of parsing nodes for preview
+#[derive(Debug, Clone, Serialize)]
+pub struct ParseNodesResult {
+    pub nodes: Vec<NodePreviewItem>,
+    pub subscription_info: Option<SubscriptionInfo>,
 }
 
 /// Convert subscription to Clash YAML config
@@ -55,11 +63,11 @@ async fn parse_nodes(
     content: String,
     include_regex: Option<String>,
     exclude_regex: Option<String>,
-) -> Result<Vec<NodePreviewItem>, String> {
+) -> Result<ParseNodesResult, String> {
     let engine = SubscriptionEngine::new(30).map_err(|e| e.to_string())?;
 
-    // Resolve subscription content (fetch URLs if needed)
-    let raw = engine.resolve_content(&content).await.map_err(|e| e.to_string())?;
+    // Resolve subscription content (fetch URLs if needed) with subscription info
+    let (raw, subscription_info) = engine.resolve_content_with_info(&content).await.map_err(|e| e.to_string())?;
 
     // Parse nodes
     let nodes = parser::parse_subscription_content(&raw).map_err(|e| e.to_string())?;
@@ -74,12 +82,15 @@ async fn parse_nodes(
     // Deduplicate
     let nodes = filter::deduplicate_nodes(nodes);
 
-    Ok(nodes.iter().map(|n| NodePreviewItem {
-        name: n.name().to_string(),
-        protocol: n.protocol_type().to_string(),
-        server: n.server().to_string(),
-        port: n.port(),
-    }).collect())
+    Ok(ParseNodesResult {
+        nodes: nodes.iter().map(|n| NodePreviewItem {
+            name: n.name().to_string(),
+            protocol: n.protocol_type().to_string(),
+            server: n.server().to_string(),
+            port: n.port(),
+        }).collect(),
+        subscription_info,
+    })
 }
 
 /// Validate regex pattern

@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{ConvertError, Result};
 
-/// Default User-Agent
+/// Default User-Agent - uses clash-verge UA for compatibility with subscription providers
+/// that return different content based on client type detection
 pub const DEFAULT_USER_AGENT: &str = "clash-verge/v2.0.0";
 
 /// Subscription info parsed from `subscription-userinfo` header

@@ -222,6 +222,12 @@ impl SubscriptionEngine {
         Ok(raw)
     }
 
+    /// Resolve subscription content with subscription info (for node preview).
+    /// Returns both the content and subscription info if available.
+    pub async fn resolve_content_with_info(&self, content: &str) -> Result<(String, Option<SubscriptionInfo>)> {
+        self.resolve_subscription(content).await
+    }
+
     /// Resolve subscription content (fetch URLs, decode base64, etc.)
     /// Returns the content body and subscription info if available from HTTP headers.
     /// Supports multiple input formats:
@@ -278,8 +284,9 @@ impl SubscriptionEngine {
                             }
                         }
                     }
-                    Err(e) => {
-                        eprintln!("Warning: Failed to fetch {}: {}", item, e);
+                    Err(_e) => {
+                        // Silently skip failed URLs; the user will see
+                        // missing nodes in the preview / conversion result
                     }
                 }
             } else {

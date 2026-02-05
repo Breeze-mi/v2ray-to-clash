@@ -43,6 +43,11 @@ export interface NodePreviewItem {
   port: number;
 }
 
+export interface ParseNodesResult {
+  nodes: NodePreviewItem[];
+  subscription_info?: SubscriptionInfo;
+}
+
 export interface AppState {
   // Input
   subscription: string;
@@ -65,5 +70,6 @@ export interface AppState {
   // Output
   result: ConvertResult | null;
   previewNodes: NodePreviewItem[];
+  previewSubscriptionInfo: SubscriptionInfo | null;
   presets: PresetConfig[];
 }

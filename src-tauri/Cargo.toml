@@ -1,0 +1,57 @@
+[package]
+name = "v2ray-clash"
+version = "0.1.0"
+description = "LocalSub - Local Subscription Converter for Clash"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+name = "v2ray_clash_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Tauri core
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+
+# Ordered maps for YAML field ordering (Clash is order-sensitive)
+indexmap = { version = "2", features = ["serde"] }
+
+# HTTP client for fetching subscriptions and configs
+reqwest = { version = "0.12", features = ["rustls-tls"], default-features = false }
+
+# INI parsing for ACL4SSR config files
+rust-ini = "0.21"
+
+# Regex for node filtering and renaming
+regex = "1"
+
+# Base64 decoding for subscription content
+base64 = "0.22"
+
+# URL parsing for proxy links (vless://, vmess://, etc.)
+url = "2"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# UUID generation for VMess
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# URL encoding/decoding
+urlencoding = "2"
+
+# Async utilities
+futures = "0.3"

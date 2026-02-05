@@ -12,16 +12,33 @@ pub mod http_client;
 pub mod engine;
 
 use engine::{ConvertRequest, ConvertResult, PresetConfig, SubscriptionEngine};
+use serde::Serialize;
 
 // ============================================================================
 // Tauri Commands
 // ============================================================================
 
+/// Node preview info for frontend display
+#[derive(Debug, Clone, Serialize)]
+pub struct NodePreviewItem {
+    pub name: String,
+    pub protocol: String,
+    pub server: String,
+    pub port: u16,
+}
+
 /// Convert subscription to Clash YAML config
 #[tauri::command]
 async fn convert_subscription(request: ConvertRequest) -> Result<ConvertResult, String> {
-    let engine = SubscriptionEngine::new(request.timeout_secs)
-        .map_err(|e| e.to_string())?;
+    let engine = if let Some(ref ua) = request.custom_user_agent {
+        if !ua.is_empty() {
+            SubscriptionEngine::with_user_agent(request.timeout_secs, ua)
+        } else {
+            SubscriptionEngine::new(request.timeout_secs)
+        }
+    } else {
+        SubscriptionEngine::new(request.timeout_secs)
+    }.map_err(|e| e.to_string())?;
 
     engine.convert(request).await.map_err(|e| e.to_string())
 }
@@ -32,54 +49,37 @@ fn get_preset_configs() -> Vec<PresetConfig> {
     SubscriptionEngine::get_preset_configs()
 }
 
-/// Parse subscription content without INI config (for preview)
+/// Parse subscription content and return node details for preview
 #[tauri::command]
 async fn parse_nodes(
     content: String,
     include_regex: Option<String>,
     exclude_regex: Option<String>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<NodePreviewItem>, String> {
     let engine = SubscriptionEngine::new(30).map_err(|e| e.to_string())?;
 
-    // Create a minimal request for parsing
-    let request = ConvertRequest {
-        subscription: content,
-        ini_url: None,
-        ini_content: None,
-        include_regex,
-        exclude_regex,
-        rename_pattern: None,
-        rename_replacement: None,
-        timeout_secs: 30,
-    };
+    // Resolve subscription content (fetch URLs if needed)
+    let raw = engine.resolve_content(&content).await.map_err(|e| e.to_string())?;
 
-    // Get raw content
-    let raw = if request.subscription.starts_with("http") {
-        engine.convert(ConvertRequest {
-            subscription: request.subscription.clone(),
-            ini_url: None,
-            ini_content: None,
-            include_regex: None,
-            exclude_regex: None,
-            rename_pattern: None,
-            rename_replacement: None,
-            timeout_secs: 30,
-        }).await
-            .map_err(|e| e.to_string())?
-            .yaml
-    } else {
-        request.subscription.clone()
-    };
-
-    // Parse and filter nodes
+    // Parse nodes
     let nodes = parser::parse_subscription_content(&raw).map_err(|e| e.to_string())?;
+
+    // Filter
     let nodes = filter::filter_nodes(
         nodes,
-        request.include_regex.as_deref(),
-        request.exclude_regex.as_deref(),
+        include_regex.as_deref(),
+        exclude_regex.as_deref(),
     ).map_err(|e| e.to_string())?;
 
-    Ok(nodes.iter().map(|n| n.name().to_string()).collect())
+    // Deduplicate
+    let nodes = filter::deduplicate_nodes(nodes);
+
+    Ok(nodes.iter().map(|n| NodePreviewItem {
+        name: n.name().to_string(),
+        protocol: n.protocol_type().to_string(),
+        server: n.server().to_string(),
+        port: n.port(),
+    }).collect())
 }
 
 /// Validate regex pattern

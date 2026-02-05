@@ -9,6 +9,15 @@ export interface ConvertRequest {
   rename_pattern?: string;
   rename_replacement?: string;
   timeout_secs?: number;
+  enable_tun?: boolean;
+  custom_user_agent?: string;
+}
+
+export interface SubscriptionInfo {
+  upload?: number;
+  download?: number;
+  total?: number;
+  expire?: number;
 }
 
 export interface ConvertResult {
@@ -18,12 +27,20 @@ export interface ConvertResult {
   group_count: number;
   rule_count: number;
   warnings: string[];
+  subscription_info?: SubscriptionInfo;
 }
 
 export interface PresetConfig {
   name: string;
   url: string;
   description: string;
+}
+
+export interface NodePreviewItem {
+  name: string;
+  protocol: string;
+  server: string;
+  port: number;
 }
 
 export interface AppState {
@@ -37,12 +54,16 @@ export interface AppState {
   excludeRegex: string;
   renamePattern: string;
   renameReplacement: string;
+  enableTun: boolean;
+  customUserAgent: string;
 
   // State
   loading: boolean;
+  previewing: boolean;
   error: string | null;
 
   // Output
   result: ConvertResult | null;
+  previewNodes: NodePreviewItem[];
   presets: PresetConfig[];
 }

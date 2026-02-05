@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{ConvertError, Result};
 
+/// Default User-Agent
+pub const DEFAULT_USER_AGENT: &str = "clash-verge/v2.0.0";
+
 /// Subscription info parsed from `subscription-userinfo` header
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SubscriptionInfo {
@@ -55,9 +58,13 @@ pub struct HttpClient {
 
 impl HttpClient {
     pub fn new(timeout_secs: u64) -> Result<Self> {
+        Self::with_user_agent(timeout_secs, DEFAULT_USER_AGENT)
+    }
+
+    pub fn with_user_agent(timeout_secs: u64, user_agent: &str) -> Result<Self> {
         let client = Client::builder()
             .timeout(Duration::from_secs(timeout_secs))
-            .user_agent("clash-verge/v2.0.0")
+            .user_agent(user_agent)
             .build()
             .map_err(|e| ConvertError::Internal(format!("Failed to create HTTP client: {}", e)))?;
 

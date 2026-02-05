@@ -9,9 +9,10 @@ import {
   NSpace,
   NTooltip,
   NIcon,
+  NSwitch,
   type SelectOption,
 } from 'naive-ui';
-import { HelpCircleOutline, RefreshOutline } from '@vicons/ionicons5';
+import { HelpCircleOutline, RefreshOutline, EyeOutline } from '@vicons/ionicons5';
 import { useAppStore } from '../stores/app';
 
 const store = useAppStore();
@@ -76,8 +77,10 @@ async function validateRenameRegex() {
         placeholder="输入订阅链接或节点内容...
 支持格式:
 - 订阅 URL (http/https)
-- VLESS/VMess/SS/Trojan 链接
-- Base64 编码内容"
+- VLESS/VMess/SS/SSR/Trojan 链接
+- Hysteria/Hysteria2/TUIC 链接
+- Base64 编码内容
+- 多个链接用换行或 | 分隔"
         :rows="8"
         class="subscription-input"
       />
@@ -166,6 +169,34 @@ async function validateRenameRegex() {
               />
             </NSpace>
           </div>
+
+          <div class="option-group">
+            <div class="option-header">
+              <span>输出选项</span>
+            </div>
+            <div class="switch-row">
+              <span class="switch-label">TUN 模式（系统代理）</span>
+              <NSwitch v-model:value="store.enableTun" />
+            </div>
+          </div>
+
+          <div class="option-group">
+            <div class="option-header">
+              <span>自定义 User-Agent</span>
+              <NTooltip>
+                <template #trigger>
+                  <NIcon size="14" class="help-icon">
+                    <HelpCircleOutline />
+                  </NIcon>
+                </template>
+                某些机场检查 UA，可自定义抓取订阅时的 User-Agent
+              </NTooltip>
+            </div>
+            <NInput
+              v-model:value="store.customUserAgent"
+              placeholder="默认: clash-verge/v2.0.0"
+            />
+          </div>
         </div>
       </NCollapseItem>
     </NCollapse>
@@ -187,11 +218,45 @@ async function validateRenameRegex() {
       </NButton>
       <NButton
         size="large"
+        :loading="store.previewing"
+        :disabled="!store.hasSubscription || store.loading"
+        @click="store.preview"
+      >
+        <template #icon>
+          <NIcon>
+            <EyeOutline />
+          </NIcon>
+        </template>
+        预览节点
+      </NButton>
+      <NButton
+        size="large"
         :disabled="store.loading"
         @click="store.reset"
       >
         重置
       </NButton>
+    </div>
+
+    <!-- Node Preview -->
+    <div v-if="store.hasPreview" class="preview-section">
+      <div class="preview-header">
+        <span class="section-title">节点预览</span>
+        <span class="preview-count">{{ store.previewNodes.length }} 个节点</span>
+      </div>
+      <div class="preview-list">
+        <div
+          v-for="(node, idx) in store.previewNodes"
+          :key="idx"
+          class="preview-item"
+        >
+          <span class="node-protocol" :class="'proto-' + node.protocol.toLowerCase()">
+            {{ node.protocol }}
+          </span>
+          <span class="node-name">{{ node.name }}</span>
+          <span class="node-server">{{ node.server }}:{{ node.port }}</span>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -260,9 +325,97 @@ async function validateRenameRegex() {
   color: var(--text-color-2);
 }
 
+.switch-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.switch-label {
+  font-size: 13px;
+  color: var(--text-color-2);
+}
+
 .actions {
   display: flex;
   gap: 12px;
   padding-top: 8px;
+}
+
+.preview-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.preview-count {
+  font-size: 12px;
+  color: var(--text-color-3);
+}
+
+.preview-list {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-color);
+}
+
+.preview-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--divider-color);
+}
+
+.preview-item:last-child {
+  border-bottom: none;
+}
+
+.node-protocol {
+  display: inline-block;
+  min-width: 60px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  color: #fff;
+  background: #8c8c9a;
+  flex-shrink: 0;
+}
+
+.proto-vless { background: #5b8def; }
+.proto-vmess { background: #7c5bef; }
+.proto-ss { background: #18a058; }
+.proto-ssr { background: #2db84d; }
+.proto-trojan { background: #d03050; }
+.proto-hysteria { background: #f0a020; }
+.proto-hysteria2 { background: #e88020; }
+.proto-tuic { background: #36ad6a; }
+.proto-wireguard { background: #8854d0; }
+
+.node-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-color-1);
+}
+
+.node-server {
+  font-size: 11px;
+  color: var(--text-color-3);
+  font-family: 'Monaco', 'Menlo', monospace;
+  flex-shrink: 0;
 }
 </style>

@@ -291,13 +291,21 @@ impl Default for DnsConfig {
 /// Builder for assembling Clash config
 pub struct ClashConfigBuilder {
     config: ClashConfig,
+    enable_tun: bool,
 }
 
 impl ClashConfigBuilder {
     pub fn new() -> Self {
         Self {
             config: ClashConfig::default(),
+            enable_tun: false,
         }
+    }
+
+    /// Enable TUN mode for system-wide proxy
+    pub fn with_tun(mut self) -> Self {
+        self.enable_tun = true;
+        self
     }
 
     /// Set basic proxy settings
@@ -336,21 +344,32 @@ impl ClashConfigBuilder {
         let mut ruleset_rules = Vec::new();
 
         for (idx, (target, url)) in ini_config.ruleset_urls.iter().enumerate() {
-            // Derive provider name from URL
-            let provider_name = derive_provider_name(url, idx);
-
-            // Detect behavior from URL path
-            let behavior = if url.contains("Domain") || url.contains("domain") {
-                "domain"
-            } else if url.contains("CIDR") || url.contains("cidr") || url.contains("IP") {
-                "ipcidr"
+            // Handle explicit behavior prefixes from subconverter format
+            // e.g., "clash-domain:url", "clash-ipcidr:url", "clash-classic:url"
+            let (behavior, clean_url) = if let Some(rest) = url.strip_prefix("clash-domain:") {
+                ("domain", rest.to_string())
+            } else if let Some(rest) = url.strip_prefix("clash-ipcidr:") {
+                ("ipcidr", rest.to_string())
+            } else if let Some(rest) = url.strip_prefix("clash-classic:") {
+                ("classical", rest.to_string())
             } else {
-                "classical"
+                // Detect behavior from URL path heuristics
+                let b = if url.contains("Domain") || url.contains("domain") {
+                    "domain"
+                } else if url.contains("CIDR") || url.contains("cidr") || url.contains("/IP") {
+                    "ipcidr"
+                } else {
+                    "classical"
+                };
+                (b, url.clone())
             };
+
+            // Derive provider name from URL
+            let provider_name = derive_provider_name(&clean_url, idx);
 
             rule_providers.push(RuleProvider {
                 name: provider_name.clone(),
-                url: url.clone(),
+                url: clean_url.clone(),
                 target: target.clone(),
                 provider_type: "http".to_string(),
                 behavior: behavior.to_string(),
@@ -483,6 +502,7 @@ impl ClashConfigBuilder {
     /// Build and serialize to YAML string
     /// Generates a simple, compatible config that works with all Mihomo/Clash Meta versions
     pub fn build_yaml(self) -> Result<String, serde_yaml::Error> {
+        let enable_tun = self.enable_tun;
         let config = self.build();
 
         let mut output = String::new();
@@ -501,6 +521,21 @@ impl ClashConfigBuilder {
         output.push_str(&format!("ipv6: {}\n", config.ipv6));
         output.push_str("external-controller: :9090\n");
         output.push('\n');
+
+        // TUN settings (optional)
+        if enable_tun {
+            output.push_str("# TUN 模式 (系统代理)\n");
+            output.push_str("tun:\n");
+            output.push_str("  enable: true\n");
+            output.push_str("  stack: mixed\n");
+            output.push_str("  dns-hijack:\n");
+            output.push_str("    - any:53\n");
+            output.push_str("    - tcp://any:53\n");
+            output.push_str("  auto-route: true\n");
+            output.push_str("  auto-redirect: true\n");
+            output.push_str("  auto-detect-interface: true\n");
+            output.push('\n');
+        }
 
         // Proxies section
         output.push_str("# 代理节点\n");
@@ -638,6 +673,24 @@ fn format_proxy_yaml(proxy: &serde_yaml::Value) -> Result<String, serde_yaml::Er
                         }
                     }
                 }
+                "plugin-opts" => {
+                    // Handle SS plugin-opts (obfs, v2ray-plugin, etc.)
+                    output.push_str(&format!("{}plugin-opts:\n", indent));
+                    if let serde_yaml::Value::Mapping(opts) = value {
+                        for (k, v) in opts {
+                            let k_str = k.as_str().unwrap_or("");
+                            // Boolean values should output without quotes
+                            match v {
+                                serde_yaml::Value::Bool(b) => {
+                                    output.push_str(&format!("      {}: {}\n", k_str, b));
+                                }
+                                _ => {
+                                    output.push_str(&format!("      {}: {}\n", k_str, format_yaml_value(v)));
+                                }
+                            }
+                        }
+                    }
+                }
                 "alpn" => {
                     output.push_str(&format!("{}alpn:\n", indent));
                     if let serde_yaml::Value::Sequence(seq) = value {
@@ -668,21 +721,29 @@ fn format_group_yaml(group: &serde_yaml::Value) -> Result<String, serde_yaml::Er
         let group_type = map.get(&serde_yaml::Value::String("type".to_string()));
         let url = map.get(&serde_yaml::Value::String("url".to_string()));
         let interval = map.get(&serde_yaml::Value::String("interval".to_string()));
+        let timeout = map.get(&serde_yaml::Value::String("timeout".to_string()));
+        let tolerance = map.get(&serde_yaml::Value::String("tolerance".to_string()));
         let proxies = map.get(&serde_yaml::Value::String("proxies".to_string()));
 
-        // Output in correct order: name, type, url, interval, proxies
+        // Output in correct order: name, type, url, interval, timeout, tolerance, proxies
         if let Some(n) = name {
             output.push_str(&format!("  - name: {}\n", format_yaml_value_simple(n)));
         }
         if let Some(t) = group_type {
             output.push_str(&format!("    type: {}\n", format_yaml_value_simple(t)));
         }
-        // For url-test/fallback: url and interval BEFORE proxies
+        // For url-test/fallback: url, interval, timeout, tolerance BEFORE proxies
         if let Some(u) = url {
             output.push_str(&format!("    url: {}\n", format_yaml_value_simple(u)));
         }
         if let Some(i) = interval {
             output.push_str(&format!("    interval: {}\n", format_yaml_value_simple(i)));
+        }
+        if let Some(t) = timeout {
+            output.push_str(&format!("    timeout: {}\n", format_yaml_value_simple(t)));
+        }
+        if let Some(t) = tolerance {
+            output.push_str(&format!("    tolerance: {}\n", format_yaml_value_simple(t)));
         }
         // Proxies list
         if let Some(serde_yaml::Value::Sequence(seq)) = proxies {

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { invoke } from '@tauri-apps/api/core';
-import type { AppState, ConvertRequest, ConvertResult, PresetConfig } from '../types';
+import type { AppState, ConvertRequest, ConvertResult, PresetConfig, NodePreviewItem } from '../types';
 
 export const useAppStore = defineStore('app', {
   state: (): AppState => ({
@@ -11,15 +11,20 @@ export const useAppStore = defineStore('app', {
     excludeRegex: '',
     renamePattern: '',
     renameReplacement: '',
+    enableTun: false,
+    customUserAgent: '',
     loading: false,
+    previewing: false,
     error: null,
     result: null,
+    previewNodes: [],
     presets: [],
   }),
 
   getters: {
     hasSubscription: (state) => state.subscription.trim().length > 0,
     hasResult: (state) => state.result !== null,
+    hasPreview: (state) => state.previewNodes.length > 0,
     effectiveIniUrl: (state) => {
       if (state.selectedPreset) {
         const preset = state.presets.find(p => p.name === state.selectedPreset);
@@ -48,6 +53,7 @@ export const useAppStore = defineStore('app', {
       this.loading = true;
       this.error = null;
       this.result = null;
+      this.previewNodes = [];
 
       try {
         const request: ConvertRequest = {
@@ -57,6 +63,8 @@ export const useAppStore = defineStore('app', {
           exclude_regex: this.excludeRegex || undefined,
           rename_pattern: this.renamePattern || undefined,
           rename_replacement: this.renameReplacement || undefined,
+          enable_tun: this.enableTun,
+          custom_user_agent: this.customUserAgent || undefined,
           timeout_secs: 30,
         };
 
@@ -82,6 +90,29 @@ export const useAppStore = defineStore('app', {
       }
     },
 
+    async preview() {
+      if (!this.hasSubscription) {
+        this.error = '请输入订阅链接';
+        return;
+      }
+
+      this.previewing = true;
+      this.error = null;
+      this.previewNodes = [];
+
+      try {
+        this.previewNodes = await invoke<NodePreviewItem[]>('parse_nodes', {
+          content: this.subscription,
+          include_regex: this.includeRegex || null,
+          exclude_regex: this.excludeRegex || null,
+        });
+      } catch (e) {
+        this.error = String(e);
+      } finally {
+        this.previewing = false;
+      }
+    },
+
     clearResult() {
       this.result = null;
       this.error = null;
@@ -95,7 +126,10 @@ export const useAppStore = defineStore('app', {
       this.excludeRegex = '';
       this.renamePattern = '';
       this.renameReplacement = '';
+      this.enableTun = false;
+      this.customUserAgent = '';
       this.result = null;
+      this.previewNodes = [];
       this.error = null;
     },
   },

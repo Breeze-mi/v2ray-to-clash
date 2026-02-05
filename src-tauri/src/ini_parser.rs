@@ -452,7 +452,16 @@ pub fn to_clash_proxy_groups(
             map.insert("interval".into(), serde_yaml::Value::Number(
                 (group.interval.unwrap_or(300)).into()
             ));
-            // Note: tolerance and lazy are intentionally omitted for maximum compatibility
+            // Add timeout if specified
+            if let Some(timeout) = group.timeout {
+                map.insert("timeout".into(), serde_yaml::Value::Number(timeout.into()));
+            }
+            // Add tolerance (only for url-test)
+            if group.group_type == "url-test" {
+                if let Some(tolerance) = group.tolerance {
+                    map.insert("tolerance".into(), serde_yaml::Value::Number(tolerance.into()));
+                }
+            }
         }
 
         result.push(map);

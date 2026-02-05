@@ -43,6 +43,14 @@ pub struct ConvertRequest {
     /// Request timeout in seconds
     #[serde(default = "default_timeout")]
     pub timeout_secs: u64,
+
+    /// Enable TUN configuration in output
+    #[serde(default)]
+    pub enable_tun: bool,
+
+    /// Custom User-Agent for fetching subscriptions
+    #[serde(default)]
+    pub custom_user_agent: Option<String>,
 }
 
 fn default_timeout() -> u64 {
@@ -84,6 +92,12 @@ impl SubscriptionEngine {
     pub fn new(timeout_secs: u64) -> Result<Self> {
         Ok(Self {
             http_client: HttpClient::new(timeout_secs)?,
+        })
+    }
+
+    pub fn with_user_agent(timeout_secs: u64, user_agent: &str) -> Result<Self> {
+        Ok(Self {
+            http_client: HttpClient::with_user_agent(timeout_secs, user_agent)?,
         })
     }
 
@@ -168,7 +182,11 @@ impl SubscriptionEngine {
         };
 
         // Step 6: Build Clash config
-        let builder = ClashConfigBuilder::new().with_nodes(&nodes);
+        let mut builder = ClashConfigBuilder::new().with_nodes(&nodes);
+
+        if request.enable_tun {
+            builder = builder.with_tun();
+        }
 
         let (builder, group_count, rule_count) = if let Some(ref ini) = ini_config {
             let group_count = ini.proxy_groups.len();
@@ -197,52 +215,76 @@ impl SubscriptionEngine {
         })
     }
 
+    /// Resolve subscription content only (for node preview, no conversion).
+    /// Fetches URLs and decodes base64 if needed.
+    pub async fn resolve_content(&self, content: &str) -> Result<String> {
+        let (raw, _) = self.resolve_subscription(content).await?;
+        Ok(raw)
+    }
+
     /// Resolve subscription content (fetch URLs, decode base64, etc.)
     /// Returns the content body and subscription info if available from HTTP headers.
+    /// Supports multiple input formats:
+    /// - Single URL
+    /// - Multiple URLs separated by `|` or newlines
+    /// - Direct links (vless://, vmess://, etc.)
+    /// - Base64 encoded subscription content
     async fn resolve_subscription(&self, content: &str) -> Result<(String, Option<SubscriptionInfo>)> {
-        let content = content.trim();
+        // Step 1: Clean input - remove BOM, normalize line endings, trim whitespace
+        let content = clean_input(content);
 
-        // Check if content is a single URL
-        if content.starts_with("http://") || content.starts_with("https://") {
-            if content.lines().count() == 1 {
-                // Single URL - fetch it with subscription info
-                let result = self.http_client.fetch_with_info(content).await?;
-                return Ok((result.body, result.subscription_info));
+        // Step 2: Split by | or newlines (subconverter compatible)
+        let items: Vec<&str> = if content.contains('|') && !content.contains("://") {
+            // Pure URL list separated by |
+            content.split('|').collect()
+        } else if content.contains('|') {
+            // Could be URLs separated by | or a link with | in parameters
+            // If it looks like multiple URLs, split; otherwise treat as single
+            if content.matches("http").count() > 1 {
+                content.split('|').collect()
+            } else {
+                vec![content.as_str()]
             }
-        }
+        } else {
+            // Split by newlines
+            content.lines().collect()
+        };
 
-        // Check if content contains multiple URLs or mixed content
+        // Step 3: Process each item
         let mut result_lines = Vec::new();
         let mut first_sub_info: Option<SubscriptionInfo> = None;
 
-        for line in content.lines() {
-            let line = line.trim();
-            if line.is_empty() {
+        for item in items {
+            let item = item.trim();
+            if item.is_empty() {
                 continue;
             }
 
-            if line.starts_with("http://") || line.starts_with("https://") {
+            if item.starts_with("http://") || item.starts_with("https://") {
                 // Fetch URL content with info
-                match self.http_client.fetch_with_info(line).await {
+                match self.http_client.fetch_with_info(item).await {
                     Ok(fetched) => {
                         // Keep the first subscription info we encounter
                         if first_sub_info.is_none() {
                             first_sub_info = fetched.subscription_info;
                         }
+                        // The fetched content might be base64 encoded, decode it
+                        let decoded_content = decode_subscription_body(&fetched.body);
                         // Append fetched content
-                        for sub_line in fetched.body.lines() {
-                            if !sub_line.trim().is_empty() {
+                        for sub_line in decoded_content.lines() {
+                            let sub_line = sub_line.trim();
+                            if !sub_line.is_empty() {
                                 result_lines.push(sub_line.to_string());
                             }
                         }
                     }
                     Err(e) => {
-                        eprintln!("Warning: Failed to fetch {}: {}", line, e);
+                        eprintln!("Warning: Failed to fetch {}: {}", item, e);
                     }
                 }
             } else {
                 // Direct content (links or base64)
-                result_lines.push(line.to_string());
+                result_lines.push(item.to_string());
             }
         }
 
@@ -292,4 +334,85 @@ pub struct PresetConfig {
     pub name: String,
     pub url: String,
     pub description: String,
+}
+
+// ============================================================================
+// Helper functions for input cleaning and decoding
+// ============================================================================
+
+/// Clean input content: remove BOM, normalize line endings, trim whitespace
+fn clean_input(content: &str) -> String {
+    let mut content = content.to_string();
+
+    // Remove UTF-8 BOM if present
+    if content.starts_with('\u{FEFF}') {
+        content = content[3..].to_string();
+    }
+    // Also handle the raw BOM bytes in case they weren't decoded
+    if content.starts_with("\u{EF}\u{BB}\u{BF}") {
+        content = content[3..].to_string();
+    }
+
+    // Normalize line endings: \r\n -> \n, \r -> \n
+    content = content.replace("\r\n", "\n").replace('\r', "\n");
+
+    // Trim overall
+    content.trim().to_string()
+}
+
+/// Decode subscription body if it's base64 encoded
+/// Returns decoded content or original content if not base64
+fn decode_subscription_body(body: &str) -> String {
+    use base64::{engine::general_purpose::{STANDARD, URL_SAFE, URL_SAFE_NO_PAD}, Engine as _};
+
+    let body = clean_input(body);
+
+    // Check if content looks like base64 (no protocol prefix, only valid base64 chars)
+    let is_likely_base64 = !body.contains("://")
+        && !body.contains('\n')
+        && body.len() > 20  // base64 content is typically longer
+        && body.chars().all(|c| {
+            c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '='
+                || c == '-' || c == '_'
+        });
+
+    // Also check if it contains newlines but ALL lines look like base64
+    let lines_all_base64 = body.lines().all(|line| {
+        let line = line.trim();
+        line.is_empty() || (!line.contains("://") && line.chars().all(|c| {
+            c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '='
+                || c == '-' || c == '_'
+        }))
+    });
+
+    if is_likely_base64 || (body.lines().count() == 1 && lines_all_base64) {
+        // Try to decode as base64
+        let encoded = body.replace(['\n', '\r', ' '], "");
+
+        // Try different base64 variants
+        let decoded = STANDARD.decode(&encoded)
+            .or_else(|_| URL_SAFE.decode(&encoded))
+            .or_else(|_| URL_SAFE_NO_PAD.decode(&encoded))
+            .or_else(|_| {
+                // Try adding padding if missing
+                let padded = match encoded.len() % 4 {
+                    2 => format!("{}==", encoded),
+                    3 => format!("{}=", encoded),
+                    _ => encoded.clone(),
+                };
+                STANDARD.decode(&padded)
+                    .or_else(|_| URL_SAFE.decode(&padded))
+            });
+
+        if let Ok(bytes) = decoded {
+            if let Ok(s) = String::from_utf8(bytes) {
+                // Successfully decoded and it's valid UTF-8
+                // Recursively clean the decoded content
+                return clean_input(&s);
+            }
+        }
+    }
+
+    // Not base64 or failed to decode, return as-is
+    body
 }

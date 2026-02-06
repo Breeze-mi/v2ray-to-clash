@@ -1,0 +1,20 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 背景圆角矩形 -->
+  <rect width="512" height="512" rx="108" fill="url(#gradient)"/>
+
+  <!-- 上方箭头: 向右 -->
+  <path d="M96 176H340L280 116" stroke="white" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="96" cy="176" r="28" fill="white"/>
+
+  <!-- 下方箭头: 向左 -->
+  <path d="M416 336H172L232 396" stroke="white" stroke-opacity="0.85" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="416" cy="336" r="28" fill="white" fill-opacity="0.85"/>
+
+  <!-- 渐变定义 -->
+  <defs>
+    <linearGradient id="gradient" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#4f46e5"/>
+    </linearGradient>
+  </defs>
+</svg>

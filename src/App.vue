@@ -2,12 +2,6 @@
 import { onMounted } from 'vue';
 import {
   NConfigProvider,
-  NLayout,
-  NLayoutContent,
-  NLayoutHeader,
-  NGrid,
-  NGridItem,
-  NCard,
   NMessageProvider,
   type GlobalThemeOverrides,
 } from 'naive-ui';
@@ -23,11 +17,23 @@ onMounted(() => {
 
 const themeOverrides: GlobalThemeOverrides = {
   common: {
-    primaryColor: '#5b8def',
-    primaryColorHover: '#4a7de0',
-    primaryColorPressed: '#3a6dd0',
-    borderRadius: '8px',
+    primaryColor: '#6366f1',
+    primaryColorHover: '#4f46e5',
+    primaryColorPressed: '#4338ca',
+    borderRadius: '6px',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif',
+  },
+  Card: {
+    paddingSmall: '12px',
+    paddingMedium: '16px',
+  },
+  Input: {
+    heightSmall: '28px',
+    heightMedium: '32px',
+  },
+  Button: {
+    heightSmall: '28px',
+    heightMedium: '32px',
   },
 };
 </script>
@@ -35,50 +41,54 @@ const themeOverrides: GlobalThemeOverrides = {
 <template>
   <NConfigProvider :theme-overrides="themeOverrides">
     <NMessageProvider>
-      <NLayout class="app-layout">
-        <NLayoutHeader class="app-header" bordered>
-          <div class="header-content">
-            <div class="header-left">
-              <div class="logo">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                  <rect x="2" y="3" width="20" height="18" rx="3" stroke="#5b8def" stroke-width="2"/>
-                  <path d="M7 8l3 4-3 4" stroke="#5b8def" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M13 16h4" stroke="#5b8def" stroke-width="2" stroke-linecap="round"/>
-                </svg>
-              </div>
-              <div class="title-group">
-                <h1 class="app-title">LocalSub</h1>
-                <span class="app-subtitle">本地订阅转换器</span>
-              </div>
+      <div class="h-screen flex flex-col bg-slate-50 overflow-hidden">
+        <!-- Header -->
+        <header class="h-11 px-4 flex items-center justify-between bg-white border-b border-slate-200 shrink-0">
+          <div class="flex items-center gap-2.5">
+            <!-- Logo -->
+            <div class="w-6 h-6 rounded-md bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shadow-sm">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="text-white">
+                <path d="M7 8l3 4-3 4" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M13 16h4" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+              </svg>
             </div>
-            <div class="header-right">
-              <span class="version">v0.1.0</span>
-              <span class="badge">Clash</span>
-            </div>
+            <h1 class="text-base font-bold text-slate-800 tracking-tight">LocalSub</h1>
+            <span class="px-2 py-0.5 bg-gradient-to-r from-indigo-50 to-indigo-100 text-indigo-600 rounded-full text-xs font-semibold">
+              Clash/Mihomo
+            </span>
           </div>
-        </NLayoutHeader>
+          <span class="text-xs text-slate-400 font-medium">v0.1.2</span>
+        </header>
 
-        <NLayoutContent class="app-content">
-          <NGrid :cols="2" :x-gap="24" responsive="screen" item-responsive>
-            <NGridItem span="2 m:1">
-              <NCard title="配置" class="panel-card" :segmented="{ content: true }">
-                <ConfigPanel />
-              </NCard>
-            </NGridItem>
-            <NGridItem span="2 m:1">
-              <NCard title="结果" class="panel-card" :segmented="{ content: true }">
-                <ResultPanel />
-              </NCard>
-            </NGridItem>
-          </NGrid>
-        </NLayoutContent>
+        <!-- Main Content -->
+        <main class="flex-1 flex overflow-hidden">
+          <!-- Config Panel (40%) -->
+          <aside class="w-2/5 min-w-0 bg-white border-r border-slate-200 flex flex-col overflow-hidden">
+            <div class="px-3 pt-3 pb-2">
+              <h2 class="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+                <span class="i-carbon-settings w-3.5 h-3.5"></span>
+                配置
+              </h2>
+            </div>
+            <div class="flex-1 overflow-y-auto px-3 pb-3">
+              <ConfigPanel />
+            </div>
+          </aside>
 
-        <footer class="app-footer">
-          <span>LocalSub - 零隐私泄露的订阅转换工具</span>
-          <span class="separator">|</span>
-          <span>所有转换均在本地 Rust 引擎完成</span>
-        </footer>
-      </NLayout>
+          <!-- Result Panel (60%) -->
+          <section class="w-3/5 min-w-0 bg-slate-50 flex flex-col overflow-hidden">
+            <div class="px-4 pt-3 pb-2">
+              <h2 class="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+                <span class="i-carbon-document w-3.5 h-3.5"></span>
+                结果
+              </h2>
+            </div>
+            <div class="flex-1 overflow-y-auto px-4 pb-3">
+              <ResultPanel />
+            </div>
+          </section>
+        </main>
+      </div>
     </NMessageProvider>
   </NConfigProvider>
 </template>
@@ -97,110 +107,27 @@ html, body {
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
-  background: #f5f7fa;
-  color: #1a1a2e;
-}
-</style>
-
-<style scoped>
-.app-layout {
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-.app-header {
-  padding: 0 24px;
-  height: 56px;
-  display: flex;
-  align-items: center;
-  background: #fff;
-  border-bottom: 1px solid #e8e8ec;
-}
-
-.header-content {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.logo {
-  display: flex;
-  align-items: center;
-}
-
-.title-group {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.app-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: #1a1a2e;
-  letter-spacing: -0.02em;
-}
-
-.app-subtitle {
   font-size: 13px;
-  color: #8c8c9a;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
 
-.version {
-  font-size: 12px;
-  color: #8c8c9a;
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-.badge {
-  padding: 2px 10px;
-  background: #eef3ff;
-  color: #5b8def;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 600;
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
 }
 
-.app-content {
-  flex: 1;
-  padding: 24px;
-  overflow: auto;
-}
-
-.panel-card {
-  height: calc(100vh - 56px - 48px - 40px);
-}
-
-.panel-card :deep(.n-card__content) {
-  overflow: auto;
-}
-
-.app-footer {
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-size: 12px;
-  color: #8c8c9a;
-  background: #fff;
-  border-top: 1px solid #e8e8ec;
-}
-
-.separator {
-  opacity: 0.4;
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 </style>

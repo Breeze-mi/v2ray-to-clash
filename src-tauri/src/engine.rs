@@ -51,10 +51,26 @@ pub struct ConvertRequest {
     /// Custom User-Agent for fetching subscriptions
     #[serde(default)]
     pub custom_user_agent: Option<String>,
+
+    /// Enable UDP for all nodes (global switch)
+    #[serde(default = "default_true")]
+    pub enable_udp: bool,
+
+    /// Enable TCP Fast Open for all nodes (global switch)
+    #[serde(default)]
+    pub enable_tfo: bool,
+
+    /// Skip certificate verification for all nodes (global switch)
+    #[serde(default)]
+    pub skip_cert_verify: bool,
 }
 
 fn default_timeout() -> u64 {
     30
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// Conversion result
@@ -182,7 +198,9 @@ impl SubscriptionEngine {
         };
 
         // Step 6: Build Clash config
-        let mut builder = ClashConfigBuilder::new().with_nodes(&nodes);
+        let mut builder = ClashConfigBuilder::new()
+            .with_nodes(&nodes)
+            .with_global_options(request.enable_udp, request.enable_tfo, request.skip_cert_verify);
 
         if request.enable_tun {
             builder = builder.with_tun();
@@ -301,35 +319,62 @@ impl SubscriptionEngine {
     /// Get predefined INI config URLs
     pub fn get_preset_configs() -> Vec<PresetConfig> {
         vec![
+            // ==================== ACL4SSR 系列 ====================
             PresetConfig {
                 name: "ACL4SSR_Online".to_string(),
                 url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online.ini".to_string(),
-                description: "默认版 分组比较全".to_string(),
+                description: "ACL4SSR 默认版 分组比较全".to_string(),
             },
             PresetConfig {
                 name: "ACL4SSR_Online_Mini".to_string(),
                 url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_Mini.ini".to_string(),
-                description: "精简版 少量规则".to_string(),
+                description: "ACL4SSR 精简版 少量规则".to_string(),
+            },
+            PresetConfig {
+                name: "ACL4SSR_Online_Mini_NoAuto".to_string(),
+                url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_Mini_NoAuto.ini".to_string(),
+                description: "ACL4SSR 精简版 无自动测速".to_string(),
             },
             PresetConfig {
                 name: "ACL4SSR_Online_Full".to_string(),
                 url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_Full.ini".to_string(),
-                description: "全分组版 带用于测试的小分组".to_string(),
+                description: "ACL4SSR 全分组版 带测试分组".to_string(),
             },
             PresetConfig {
                 name: "ACL4SSR_Online_Full_NoAuto".to_string(),
                 url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_Full_NoAuto.ini".to_string(),
-                description: "全分组版 不带自动测速".to_string(),
+                description: "ACL4SSR 全分组版 无自动测速".to_string(),
             },
             PresetConfig {
                 name: "ACL4SSR_Online_AdblockPlus".to_string(),
                 url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_Full_AdblockPlus.ini".to_string(),
-                description: "全分组版 带去广告".to_string(),
+                description: "ACL4SSR 全分组版 带去广告".to_string(),
             },
             PresetConfig {
-                name: "ACL4SSR_Online_MultiCountry".to_string(),
+                name: "ACL4SSR_Online_MultiMode".to_string(),
                 url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_Full_MultiMode.ini".to_string(),
-                description: "全分组版 多模式".to_string(),
+                description: "ACL4SSR 全分组版 多模式".to_string(),
+            },
+            PresetConfig {
+                name: "ACL4SSR_Online_NoReject".to_string(),
+                url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_NoReject.ini".to_string(),
+                description: "ACL4SSR 无广告拦截规则".to_string(),
+            },
+            // ==================== 其他规则集 ====================
+            PresetConfig {
+                name: "全网搜集规则".to_string(),
+                url: "https://raw.githubusercontent.com/cutethotw/ClashRule/main/GeneralClashRule.ini".to_string(),
+                description: "全网搜集 分流较细致".to_string(),
+            },
+            PresetConfig {
+                name: "分区域故障转移".to_string(),
+                url: "https://raw.githubusercontent.com/cutethotw/ClashRule/main/GeneralClashRule-Fallback.ini".to_string(),
+                description: "按区域故障转移".to_string(),
+            },
+            PresetConfig {
+                name: "NeteaseUnblock".to_string(),
+                url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_Full_Netflix.ini".to_string(),
+                description: "ACL4SSR Netflix 优化版".to_string(),
             },
         ]
     }

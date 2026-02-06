@@ -292,6 +292,12 @@ impl Default for DnsConfig {
 pub struct ClashConfigBuilder {
     config: ClashConfig,
     enable_tun: bool,
+    /// Global UDP switch for all nodes
+    enable_udp: bool,
+    /// Global TCP Fast Open switch
+    enable_tfo: bool,
+    /// Global skip-cert-verify switch
+    skip_cert_verify: bool,
 }
 
 impl ClashConfigBuilder {
@@ -299,12 +305,23 @@ impl ClashConfigBuilder {
         Self {
             config: ClashConfig::default(),
             enable_tun: false,
+            enable_udp: true,
+            enable_tfo: false,
+            skip_cert_verify: false,
         }
     }
 
     /// Enable TUN mode for system-wide proxy
     pub fn with_tun(mut self) -> Self {
         self.enable_tun = true;
+        self
+    }
+
+    /// Set global options for all nodes (UDP, TFO, skip-cert-verify)
+    pub fn with_global_options(mut self, enable_udp: bool, enable_tfo: bool, skip_cert_verify: bool) -> Self {
+        self.enable_udp = enable_udp;
+        self.enable_tfo = enable_tfo;
+        self.skip_cert_verify = skip_cert_verify;
         self
     }
 
@@ -315,12 +332,22 @@ impl ClashConfigBuilder {
         self
     }
 
-    /// Add proxy nodes
+    /// Add proxy nodes with global options applied
     pub fn with_nodes(mut self, nodes: &[Node]) -> Self {
         self.config.proxies = nodes
             .iter()
             .map(|n| {
-                let map = n.to_clash_proxy();
+                let mut map = n.to_clash_proxy();
+                // Apply global options
+                if self.enable_udp {
+                    map.insert("udp".to_string(), serde_yaml::Value::Bool(true));
+                }
+                if self.enable_tfo {
+                    map.insert("tfo".to_string(), serde_yaml::Value::Bool(true));
+                }
+                if self.skip_cert_verify {
+                    map.insert("skip-cert-verify".to_string(), serde_yaml::Value::Bool(true));
+                }
                 serde_yaml::to_value(map).unwrap_or(serde_yaml::Value::Null)
             })
             .collect();

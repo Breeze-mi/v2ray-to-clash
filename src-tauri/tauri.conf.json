@@ -13,10 +13,10 @@
     "windows": [
       {
         "title": "LocalSub - 本地订阅转换器",
-        "width": 1200,
-        "height": 800,
-        "minWidth": 900,
-        "minHeight": 600,
+        "width": 900,
+        "height": 580,
+        "minWidth": 800,
+        "minHeight": 500,
         "center": true,
         "resizable": true
       }

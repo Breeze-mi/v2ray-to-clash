@@ -30,7 +30,6 @@ const includeError = ref<string | null>(null);
 const excludeError = ref<string | null>(null);
 const renameError = ref<string | null>(null);
 
-// Format bytes to human readable string
 function formatBytes(bytes: number | undefined): string {
   if (bytes === undefined || bytes === null) return '-';
   if (bytes === 0) return '0 B';
@@ -40,7 +39,6 @@ function formatBytes(bytes: number | undefined): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-// Format timestamp to date string
 function formatExpire(timestamp: number | undefined): string {
   if (timestamp === undefined || timestamp === null) return '-';
   if (timestamp === 0) return '永不过期';
@@ -48,7 +46,6 @@ function formatExpire(timestamp: number | undefined): string {
   return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
 }
 
-// Subscription info computed
 const subInfo = computed(() => {
   const info = store.previewSubscriptionInfo;
   if (!info) return null;
@@ -96,15 +93,14 @@ async function validateRenameRegex() {
 </script>
 
 <template>
-  <div class="config-panel">
-    <div class="section">
-      <div class="section-header">
-        <span class="section-title">订阅链接</span>
+  <div class="flex flex-col gap-4">
+    <!-- 订阅链接 -->
+    <div class="flex flex-col gap-2">
+      <div class="flex items-center gap-1">
+        <span class="text-xs font-semibold text-slate-600">订阅链接</span>
         <NTooltip>
           <template #trigger>
-            <NIcon size="16" class="help-icon">
-              <HelpCircleOutline />
-            </NIcon>
+            <span class="i-carbon-help text-slate-400 w-3.5 h-3.5 cursor-help"></span>
           </template>
           支持订阅 URL 或直接粘贴节点链接，每行一个
         </NTooltip>
@@ -113,25 +109,20 @@ async function validateRenameRegex() {
         v-model:value="store.subscription"
         type="textarea"
         placeholder="输入订阅链接或节点内容...
-支持格式:
-- 订阅 URL (http/https)
-- VLESS/VMess/SS/SSR/Trojan 链接
-- Hysteria/Hysteria2/TUIC 链接
-- Base64 编码内容
-- 多个链接用换行或 | 分隔"
-        :rows="8"
-        class="subscription-input"
+支持: 订阅URL、VLESS/VMess/SS/SSR/Trojan/Hysteria/TUIC链接、Base64"
+        :rows="4"
+        size="small"
+        class="font-mono text-xs"
       />
     </div>
 
-    <div class="section">
-      <div class="section-header">
-        <span class="section-title">远程配置</span>
+    <!-- 远程配置 -->
+    <div class="flex flex-col gap-2">
+      <div class="flex items-center gap-1">
+        <span class="text-xs font-semibold text-slate-600">远程配置</span>
         <NTooltip>
           <template #trigger>
-            <NIcon size="16" class="help-icon">
-              <HelpCircleOutline />
-            </NIcon>
+            <span class="i-carbon-help text-slate-400 w-3.5 h-3.5 cursor-help"></span>
           </template>
           选择 ACL4SSR 预设配置或输入自定义 INI 配置 URL
         </NTooltip>
@@ -141,91 +132,106 @@ async function validateRenameRegex() {
         :options="presetOptions"
         placeholder="选择预设配置..."
         clearable
-        class="preset-select"
+        size="small"
       />
       <NInput
         v-if="!store.selectedPreset"
         v-model:value="store.customIniUrl"
         placeholder="自定义 INI 配置 URL（可选）"
-        class="custom-url-input"
+        size="small"
       />
     </div>
 
+    <!-- 高级选项 -->
     <NCollapse>
       <NCollapseItem title="高级选项" name="advanced">
-        <div class="advanced-options">
-          <div class="option-group">
-            <div class="option-header">
-              <span>节点筛选</span>
+        <div class="flex flex-col gap-4 py-1">
+          <!-- 节点筛选 -->
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center gap-1">
+              <span class="text-xs text-slate-500">节点筛选</span>
               <NTooltip>
                 <template #trigger>
-                  <NIcon size="14" class="help-icon">
-                    <HelpCircleOutline />
-                  </NIcon>
+                  <span class="i-carbon-help text-slate-400 w-3 h-3 cursor-help"></span>
                 </template>
                 使用正则表达式筛选节点，支持 | 分隔多个条件
               </NTooltip>
             </div>
-            <NSpace vertical>
+            <NSpace vertical size="small">
               <NInput
                 v-model:value="store.includeRegex"
                 placeholder="包含节点（正则）如: HK|香港|US|美国"
+                size="small"
                 :status="includeError ? 'error' : undefined"
                 @blur="validateIncludeRegex"
               />
               <NInput
                 v-model:value="store.excludeRegex"
                 placeholder="排除节点（正则）如: 官网|到期|剩余"
+                size="small"
                 :status="excludeError ? 'error' : undefined"
                 @blur="validateExcludeRegex"
               />
             </NSpace>
           </div>
 
-          <div class="option-group">
-            <div class="option-header">
-              <span>节点重命名</span>
+          <!-- 节点重命名 -->
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center gap-1">
+              <span class="text-xs text-slate-500">节点重命名</span>
               <NTooltip>
                 <template #trigger>
-                  <NIcon size="14" class="help-icon">
-                    <HelpCircleOutline />
-                  </NIcon>
+                  <span class="i-carbon-help text-slate-400 w-3 h-3 cursor-help"></span>
                 </template>
                 使用正则表达式查找替换节点名称
               </NTooltip>
             </div>
-            <NSpace vertical>
+            <NSpace vertical size="small">
               <NInput
                 v-model:value="store.renamePattern"
                 placeholder="查找（正则）如: \[.+\]"
+                size="small"
                 :status="renameError ? 'error' : undefined"
                 @blur="validateRenameRegex"
               />
               <NInput
                 v-model:value="store.renameReplacement"
                 placeholder="替换为（留空删除）"
+                size="small"
               />
             </NSpace>
           </div>
 
-          <div class="option-group">
-            <div class="option-header">
-              <span>输出选项</span>
-            </div>
-            <div class="switch-row">
-              <span class="switch-label">TUN 模式（系统代理）</span>
-              <NSwitch v-model:value="store.enableTun" />
+          <!-- 输出选项 -->
+          <div class="flex flex-col gap-2">
+            <span class="text-xs text-slate-500">输出选项</span>
+            <div class="flex flex-col gap-1 bg-slate-50 rounded-md p-2">
+              <div class="flex justify-between items-center py-1">
+                <span class="text-xs text-slate-600">TUN 模式（系统代理）</span>
+                <NSwitch v-model:value="store.enableTun" size="small" />
+              </div>
+              <div class="flex justify-between items-center py-1">
+                <span class="text-xs text-slate-600">启用 UDP</span>
+                <NSwitch v-model:value="store.enableUdp" size="small" />
+              </div>
+              <div class="flex justify-between items-center py-1">
+                <span class="text-xs text-slate-600">TCP Fast Open</span>
+                <NSwitch v-model:value="store.enableTfo" size="small" />
+              </div>
+              <div class="flex justify-between items-center py-1">
+                <span class="text-xs text-slate-600">跳过证书验证</span>
+                <NSwitch v-model:value="store.skipCertVerify" size="small" />
+              </div>
             </div>
           </div>
 
-          <div class="option-group">
-            <div class="option-header">
-              <span>自定义 User-Agent</span>
+          <!-- 自定义 UA -->
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center gap-1">
+              <span class="text-xs text-slate-500">自定义 User-Agent</span>
               <NTooltip>
                 <template #trigger>
-                  <NIcon size="14" class="help-icon">
-                    <HelpCircleOutline />
-                  </NIcon>
+                  <span class="i-carbon-help text-slate-400 w-3 h-3 cursor-help"></span>
                 </template>
                 某些机场检查 UA，可自定义抓取订阅时的 User-Agent
               </NTooltip>
@@ -233,42 +239,41 @@ async function validateRenameRegex() {
             <NInput
               v-model:value="store.customUserAgent"
               placeholder="默认: clash-verge/v2.0.0"
+              size="small"
             />
           </div>
         </div>
       </NCollapseItem>
     </NCollapse>
 
-    <div class="actions">
+    <!-- 操作按钮 -->
+    <div class="flex gap-2 pt-1">
       <NButton
         type="primary"
-        size="large"
+        size="small"
         :loading="store.loading"
         :disabled="!store.hasSubscription"
+        class="flex-1"
         @click="store.convert"
       >
         <template #icon>
-          <NIcon>
-            <RefreshOutline />
-          </NIcon>
+          <NIcon><RefreshOutline /></NIcon>
         </template>
-        转换订阅
+        转换
       </NButton>
       <NButton
-        size="large"
+        size="small"
         :loading="store.previewing"
         :disabled="!store.hasSubscription || store.loading"
         @click="store.preview"
       >
         <template #icon>
-          <NIcon>
-            <EyeOutline />
-          </NIcon>
+          <NIcon><EyeOutline /></NIcon>
         </template>
-        预览节点
+        预览
       </NButton>
       <NButton
-        size="large"
+        size="small"
         :disabled="store.loading"
         @click="store.reset"
       >
@@ -276,16 +281,19 @@ async function validateRenameRegex() {
       </NButton>
     </div>
 
-    <!-- Node Preview -->
-    <div v-if="store.hasPreview" class="preview-section">
-      <!-- Subscription Info -->
-      <div v-if="subInfo" class="subscription-info">
-        <div class="sub-info-header">
-          <span class="section-title">订阅信息</span>
-          <span class="sub-expire">到期: {{ subInfo.expire }}</span>
+    <!-- 节点预览 -->
+    <div v-if="store.hasPreview" class="flex flex-col gap-3 mt-1">
+      <!-- 订阅信息 -->
+      <div v-if="subInfo" class="bg-gradient-to-br from-emerald-50 to-green-50 border border-emerald-200 rounded-lg p-3">
+        <div class="flex justify-between items-center mb-2">
+          <span class="text-xs font-semibold text-emerald-700 flex items-center gap-1">
+            <span class="i-carbon-cloud-download w-3.5 h-3.5"></span>
+            订阅信息
+          </span>
+          <span class="text-xs text-slate-500">到期: {{ subInfo.expire }}</span>
         </div>
-        <div class="sub-info-traffic">
-          <div class="traffic-labels">
+        <div class="flex flex-col gap-1">
+          <div class="flex justify-between text-xs text-slate-600">
             <span>已用: {{ subInfo.used }}</span>
             <span>总量: {{ subInfo.total }}</span>
           </div>
@@ -293,232 +301,54 @@ async function validateRenameRegex() {
             type="line"
             :percentage="subInfo.percentage"
             :indicator-placement="'inside'"
-            :height="20"
+            :height="18"
             :border-radius="4"
             :status="subInfo.percentage > 90 ? 'error' : subInfo.percentage > 70 ? 'warning' : 'success'"
           />
-          <div class="traffic-detail">
+          <div class="flex justify-between text-xs text-slate-400">
             <span>上传: {{ subInfo.upload }}</span>
             <span>下载: {{ subInfo.download }}</span>
           </div>
         </div>
       </div>
 
-      <div class="preview-header">
-        <span class="section-title">节点预览</span>
-        <span class="preview-count">{{ store.previewNodes.length }} 个节点</span>
-      </div>
-      <div class="preview-list">
-        <div
-          v-for="(node, idx) in store.previewNodes"
-          :key="idx"
-          class="preview-item"
-        >
-          <span class="node-protocol" :class="'proto-' + node.protocol.toLowerCase()">
-            {{ node.protocol }}
+      <!-- 节点列表 -->
+      <div>
+        <div class="flex justify-between items-center mb-2">
+          <span class="text-xs font-semibold text-slate-600 flex items-center gap-1">
+            <span class="i-carbon-network-3 w-3.5 h-3.5"></span>
+            节点预览
           </span>
-          <span class="node-name">{{ node.name }}</span>
-          <span class="node-server">{{ node.server }}:{{ node.port }}</span>
+          <span class="text-xs text-slate-400">{{ store.previewNodes.length }} 个节点</span>
+        </div>
+        <div class="max-h-40 overflow-y-auto border border-slate-200 rounded-lg bg-white">
+          <div
+            v-for="(node, idx) in store.previewNodes"
+            :key="idx"
+            class="flex items-center gap-2 px-2.5 py-1.5 text-xs border-b border-slate-100 last:border-b-0 hover:bg-slate-50 transition-colors"
+          >
+            <span
+              class="px-1.5 py-0.5 rounded text-white text-xs font-semibold min-w-12 text-center shrink-0"
+              :class="{
+                'bg-indigo-500': node.protocol.toLowerCase() === 'vless',
+                'bg-violet-500': node.protocol.toLowerCase() === 'vmess',
+                'bg-emerald-500': node.protocol.toLowerCase() === 'ss',
+                'bg-green-400': node.protocol.toLowerCase() === 'ssr',
+                'bg-red-500': node.protocol.toLowerCase() === 'trojan',
+                'bg-amber-500': node.protocol.toLowerCase() === 'hysteria',
+                'bg-orange-500': node.protocol.toLowerCase() === 'hysteria2',
+                'bg-teal-500': node.protocol.toLowerCase() === 'tuic',
+                'bg-purple-500': node.protocol.toLowerCase() === 'wireguard',
+                'bg-slate-400': !['vless', 'vmess', 'ss', 'ssr', 'trojan', 'hysteria', 'hysteria2', 'tuic', 'wireguard'].includes(node.protocol.toLowerCase()),
+              }"
+            >
+              {{ node.protocol }}
+            </span>
+            <span class="flex-1 truncate text-slate-700">{{ node.name }}</span>
+            <span class="text-xs text-slate-400 font-mono shrink-0">{{ node.server }}:{{ node.port }}</span>
+          </div>
         </div>
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.config-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.section-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.section-title {
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--text-color-1);
-}
-
-.help-icon {
-  color: var(--text-color-3);
-  cursor: help;
-}
-
-.subscription-input {
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-  font-size: 13px;
-}
-
-.preset-select {
-  width: 100%;
-}
-
-.custom-url-input {
-  margin-top: 8px;
-}
-
-.advanced-options {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 8px 0;
-}
-
-.option-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.option-header {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  color: var(--text-color-2);
-}
-
-.switch-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 4px 0;
-}
-
-.switch-label {
-  font-size: 13px;
-  color: var(--text-color-2);
-}
-
-.actions {
-  display: flex;
-  gap: 12px;
-  padding-top: 8px;
-}
-
-.preview-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.subscription-info {
-  background: var(--card-color);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 12px;
-}
-
-.sub-info-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.sub-expire {
-  font-size: 12px;
-  color: var(--text-color-3);
-}
-
-.sub-info-traffic {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.traffic-labels {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: var(--text-color-2);
-}
-
-.traffic-detail {
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-  color: var(--text-color-3);
-}
-
-.preview-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.preview-count {
-  font-size: 12px;
-  color: var(--text-color-3);
-}
-
-.preview-list {
-  max-height: 240px;
-  overflow-y: auto;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--card-color);
-}
-
-.preview-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  font-size: 13px;
-  border-bottom: 1px solid var(--divider-color);
-}
-
-.preview-item:last-child {
-  border-bottom: none;
-}
-
-.node-protocol {
-  display: inline-block;
-  min-width: 60px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  text-align: center;
-  color: #fff;
-  background: #8c8c9a;
-  flex-shrink: 0;
-}
-
-.proto-vless { background: #5b8def; }
-.proto-vmess { background: #7c5bef; }
-.proto-ss { background: #18a058; }
-.proto-ssr { background: #2db84d; }
-.proto-trojan { background: #d03050; }
-.proto-hysteria { background: #f0a020; }
-.proto-hysteria2 { background: #e88020; }
-.proto-tuic { background: #36ad6a; }
-.proto-wireguard { background: #8854d0; }
-
-.node-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-color-1);
-}
-
-.node-server {
-  font-size: 11px;
-  color: var(--text-color-3);
-  font-family: 'Monaco', 'Menlo', monospace;
-  flex-shrink: 0;
-}
-</style>

@@ -13,6 +13,9 @@ export const useAppStore = defineStore('app', {
     renameReplacement: '',
     enableTun: false,
     customUserAgent: '',
+    enableUdp: true,
+    enableTfo: false,
+    skipCertVerify: false,
     loading: false,
     previewing: false,
     error: null,
@@ -65,6 +68,9 @@ export const useAppStore = defineStore('app', {
           rename_replacement: this.renameReplacement || undefined,
           enable_tun: this.enableTun,
           custom_user_agent: this.customUserAgent || undefined,
+          enable_udp: this.enableUdp,
+          enable_tfo: this.enableTfo,
+          skip_cert_verify: this.skipCertVerify,
           timeout_secs: 30,
         };
 
@@ -127,6 +133,9 @@ export const useAppStore = defineStore('app', {
       this.renameReplacement = '';
       this.enableTun = false;
       this.customUserAgent = '';
+      this.enableUdp = true;
+      this.enableTfo = false;
+      this.skipCertVerify = false;
       this.result = null;
       this.previewNodes = [];
       this.previewSubscriptionInfo = null;

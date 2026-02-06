@@ -4,10 +4,6 @@ import {
   NButton,
   NCode,
   NScrollbar,
-  NStatistic,
-  NSpace,
-  NGrid,
-  NGridItem,
   NAlert,
   NIcon,
   NTooltip,
@@ -19,8 +15,6 @@ import {
   DownloadOutline,
   CheckmarkCircleOutline,
   WarningOutline,
-  CloudDownloadOutline,
-  TimeOutline,
 } from '@vicons/ionicons5';
 import { useAppStore } from '../stores/app';
 
@@ -32,7 +26,6 @@ const yamlPreview = computed(() => {
   return store.result.yaml;
 });
 
-// 格式化字节数
 function formatBytes(bytes: number | undefined): string {
   if (bytes === undefined || bytes === null) return '-';
   if (bytes === 0) return '0 B';
@@ -42,7 +35,6 @@ function formatBytes(bytes: number | undefined): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-// 格式化过期时间
 function formatExpire(timestamp: number | undefined): string {
   if (timestamp === undefined || timestamp === null) return '-';
   if (timestamp === 0) return '永久';
@@ -57,7 +49,6 @@ function formatExpire(timestamp: number | undefined): string {
   return dateStr;
 }
 
-// 计算已用流量百分比
 const usedPercentage = computed(() => {
   const info = store.result?.subscription_info;
   if (!info || !info.total || info.total === 0) return null;
@@ -65,18 +56,24 @@ const usedPercentage = computed(() => {
   return Math.min(100, Math.round((used / info.total) * 100));
 });
 
-// 已用流量
 const usedTraffic = computed(() => {
   const info = store.result?.subscription_info;
   if (!info) return 0;
   return (info.upload || 0) + (info.download || 0);
 });
 
-// 是否有订阅信息
 const hasSubscriptionInfo = computed(() => {
   const info = store.result?.subscription_info;
   return info && (info.total || info.expire);
 });
+
+// 统计数据（始终显示）
+const stats = computed(() => ({
+  nodeCount: store.result?.node_count ?? '-',
+  filteredCount: store.result?.filtered_count ?? '-',
+  groupCount: store.result?.group_count ?? '-',
+  ruleCount: store.result?.rule_count ?? '-',
+}));
 
 async function copyToClipboard() {
   if (!store.result) return;
@@ -102,104 +99,61 @@ function downloadYaml() {
 </script>
 
 <template>
-  <div class="result-panel">
-    <!-- Empty state -->
-    <div v-if="!store.result && !store.error && !store.loading" class="empty-state">
-      <div class="empty-icon">
-        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <polyline points="14 2 14 8 20 8" />
-          <line x1="16" y1="13" x2="8" y2="13" />
-          <line x1="16" y1="17" x2="8" y2="17" />
-          <polyline points="10 9 9 9 8 9" />
-        </svg>
+  <div class="flex flex-col h-full gap-3">
+    <!-- 统计卡片 - 始终显示 -->
+    <div class="grid grid-cols-4 gap-2 shrink-0">
+      <div class="bg-white rounded-lg border border-slate-200 p-2.5 text-center shadow-sm hover:shadow transition-shadow">
+        <div class="text-lg font-bold text-slate-800" :class="{ 'text-slate-300': !store.result }">
+          {{ stats.nodeCount }}
+        </div>
+        <div class="text-xs text-slate-500 flex items-center justify-center gap-1">
+          <span class="i-carbon-cube w-3 h-3 text-slate-400"></span>
+          解析节点
+        </div>
       </div>
-      <p class="empty-text">在左侧输入订阅链接，点击"转换订阅"</p>
-      <p class="empty-subtext">生成的 Clash 配置将在这里显示</p>
+      <div class="bg-white rounded-lg border border-slate-200 p-2.5 text-center shadow-sm hover:shadow transition-shadow">
+        <div class="text-lg font-bold" :class="store.result ? 'text-indigo-600' : 'text-slate-300'">
+          {{ stats.filteredCount }}
+        </div>
+        <div class="text-xs text-slate-500 flex items-center justify-center gap-1">
+          <span class="i-carbon-filter w-3 h-3 text-slate-400"></span>
+          过滤后
+        </div>
+      </div>
+      <div class="bg-white rounded-lg border border-slate-200 p-2.5 text-center shadow-sm hover:shadow transition-shadow">
+        <div class="text-lg font-bold text-slate-800" :class="{ 'text-slate-300': !store.result }">
+          {{ stats.groupCount }}
+        </div>
+        <div class="text-xs text-slate-500 flex items-center justify-center gap-1">
+          <span class="i-carbon-folder w-3 h-3 text-slate-400"></span>
+          策略组
+        </div>
+      </div>
+      <div class="bg-white rounded-lg border border-slate-200 p-2.5 text-center shadow-sm hover:shadow transition-shadow">
+        <div class="text-lg font-bold text-slate-800" :class="{ 'text-slate-300': !store.result }">
+          {{ stats.ruleCount }}
+        </div>
+        <div class="text-xs text-slate-500 flex items-center justify-center gap-1">
+          <span class="i-carbon-rule w-3 h-3 text-slate-400"></span>
+          规则数
+        </div>
+      </div>
     </div>
 
-    <!-- Loading state -->
-    <div v-if="store.loading" class="loading-state">
-      <div class="spinner"></div>
-      <p>正在转换中...</p>
-    </div>
-
-    <!-- Error state -->
-    <NAlert v-if="store.error" type="error" closable @close="store.error = null">
+    <!-- 错误状态 -->
+    <NAlert v-if="store.error" type="error" closable @close="store.error = null" class="shrink-0">
       <template #header>转换失败</template>
       {{ store.error }}
     </NAlert>
 
-    <!-- Result -->
-    <div v-if="store.result" class="result-content">
-      <!-- Stats bar -->
-      <div class="stats-bar">
-        <NGrid :cols="4" :x-gap="12">
-          <NGridItem>
-            <NStatistic label="解析节点" :value="store.result.node_count" />
-          </NGridItem>
-          <NGridItem>
-            <NStatistic label="过滤后" :value="store.result.filtered_count" />
-          </NGridItem>
-          <NGridItem>
-            <NStatistic label="策略组" :value="store.result.group_count" />
-          </NGridItem>
-          <NGridItem>
-            <NStatistic label="规则数" :value="store.result.rule_count" />
-          </NGridItem>
-        </NGrid>
-      </div>
-
-      <!-- Subscription Info -->
-      <div v-if="hasSubscriptionInfo" class="subscription-info">
-        <div class="info-header">
-          <NIcon size="16"><CloudDownloadOutline /></NIcon>
-          <span>订阅信息</span>
-        </div>
-        <div class="info-content">
-          <div class="info-item">
-            <span class="info-label">流量使用</span>
-            <span class="info-value">
-              {{ formatBytes(usedTraffic) }} / {{ formatBytes(store.result.subscription_info?.total) }}
-            </span>
-          </div>
-          <div v-if="usedPercentage !== null" class="traffic-progress">
-            <NProgress
-              type="line"
-              :percentage="usedPercentage"
-              :indicator-placement="'inside'"
-              :color="usedPercentage > 90 ? '#d03050' : usedPercentage > 70 ? '#f0a020' : '#18a058'"
-            />
-          </div>
-          <div class="info-item">
-            <span class="info-label">
-              <NIcon size="14"><TimeOutline /></NIcon>
-              到期时间
-            </span>
-            <span class="info-value">{{ formatExpire(store.result.subscription_info?.expire) }}</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Warnings -->
-      <NAlert
-        v-for="(warning, idx) in store.result.warnings"
-        :key="idx"
-        type="warning"
-        class="warning-alert"
-      >
-        <template #icon>
-          <NIcon><WarningOutline /></NIcon>
-        </template>
-        {{ warning }}
-      </NAlert>
-
-      <!-- Toolbar -->
-      <div class="toolbar">
-        <NSpace>
+    <!-- 主内容区 -->
+    <div class="flex-1 min-h-0 flex flex-col bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+      <!-- 工具栏 - 始终显示 -->
+      <div class="flex justify-between items-center px-3 py-2 border-b border-slate-100 bg-slate-50/50 shrink-0">
+        <div class="flex gap-2">
           <NTooltip>
             <template #trigger>
-              <NButton size="small" @click="copyToClipboard">
+              <NButton size="small" :disabled="!store.result" @click="copyToClipboard">
                 <template #icon>
                   <NIcon><CopyOutline /></NIcon>
                 </template>
@@ -210,7 +164,7 @@ function downloadYaml() {
           </NTooltip>
           <NTooltip>
             <template #trigger>
-              <NButton size="small" @click="downloadYaml">
+              <NButton size="small" :disabled="!store.result" @click="downloadYaml">
                 <template #icon>
                   <NIcon><DownloadOutline /></NIcon>
                 </template>
@@ -219,179 +173,87 @@ function downloadYaml() {
             </template>
             下载为 clash-config.yaml
           </NTooltip>
-        </NSpace>
-        <span class="success-badge">
-          <NIcon size="16" color="#18a058"><CheckmarkCircleOutline /></NIcon>
+        </div>
+        <span v-if="store.result" class="flex items-center gap-1 text-xs text-emerald-600 font-medium">
+          <NIcon size="14" color="#10b981"><CheckmarkCircleOutline /></NIcon>
           转换成功
         </span>
+        <span v-else class="text-xs text-slate-400">等待转换</span>
       </div>
 
-      <!-- YAML Preview -->
-      <div class="yaml-preview">
-        <NScrollbar style="max-height: calc(100vh - 380px)">
-          <NCode :code="yamlPreview" language="yaml" word-wrap />
+      <!-- 订阅信息 -->
+      <div v-if="hasSubscriptionInfo" class="px-3 py-2 border-b border-slate-100 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 shrink-0">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="flex items-center gap-1 text-xs font-medium text-blue-600">
+            <span class="i-carbon-cloud-download w-3.5 h-3.5"></span>
+            订阅信息
+          </span>
+          <span class="text-xs text-slate-500 flex items-center gap-1">
+            <span class="i-carbon-time w-3 h-3"></span>
+            {{ formatExpire(store.result?.subscription_info?.expire) }}
+          </span>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="flex-1">
+            <NProgress
+              v-if="usedPercentage !== null"
+              type="line"
+              :percentage="usedPercentage"
+              :show-indicator="false"
+              :height="6"
+              :border-radius="3"
+              :color="usedPercentage > 90 ? '#ef4444' : usedPercentage > 70 ? '#f59e0b' : '#10b981'"
+              :rail-color="'#e2e8f0'"
+            />
+          </div>
+          <span class="text-xs text-slate-600 whitespace-nowrap">
+            {{ formatBytes(usedTraffic) }} / {{ formatBytes(store.result?.subscription_info?.total) }}
+          </span>
+        </div>
+      </div>
+
+      <!-- 警告 -->
+      <div v-if="store.result?.warnings?.length" class="px-3 py-2 border-b border-slate-100 shrink-0">
+        <NAlert
+          v-for="(warning, idx) in store.result.warnings"
+          :key="idx"
+          type="warning"
+          class="text-xs mb-1 last:mb-0"
+        >
+          <template #icon>
+            <NIcon size="14"><WarningOutline /></NIcon>
+          </template>
+          {{ warning }}
+        </NAlert>
+      </div>
+
+      <!-- YAML 预览区 / 空状态 -->
+      <div class="flex-1 min-h-0 overflow-hidden">
+        <!-- 空状态 -->
+        <div v-if="!store.result && !store.loading" class="flex flex-col items-center justify-center h-full text-slate-400">
+          <div class="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+            <span class="i-carbon-document-blank w-8 h-8 text-slate-300"></span>
+          </div>
+          <p class="text-sm text-slate-500 mb-1">尚未生成配置</p>
+          <p class="text-xs text-slate-400">在左侧输入订阅链接，点击"转换"按钮</p>
+        </div>
+
+        <!-- 加载状态 -->
+        <div v-else-if="store.loading" class="flex flex-col items-center justify-center h-full gap-3">
+          <div class="w-8 h-8 border-2 border-slate-200 border-t-indigo-500 rounded-full animate-spin"></div>
+          <p class="text-sm text-slate-500">正在转换中...</p>
+        </div>
+
+        <!-- YAML 预览 -->
+        <NScrollbar v-else class="h-full">
+          <NCode
+            :code="yamlPreview"
+            language="yaml"
+            word-wrap
+            class="text-xs leading-relaxed p-3"
+          />
         </NScrollbar>
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.result-panel {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  min-height: 400px;
-  color: var(--text-color-3);
-}
-
-.empty-icon {
-  opacity: 0.3;
-  margin-bottom: 16px;
-}
-
-.empty-text {
-  font-size: 16px;
-  margin: 0 0 4px 0;
-}
-
-.empty-subtext {
-  font-size: 13px;
-  margin: 0;
-  opacity: 0.7;
-}
-
-.loading-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  min-height: 400px;
-  gap: 16px;
-  color: var(--text-color-2);
-}
-
-.spinner {
-  width: 36px;
-  height: 36px;
-  border: 3px solid var(--divider-color);
-  border-top-color: var(--primary-color);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.result-content {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.stats-bar {
-  padding: 12px 16px;
-  background: var(--card-color);
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-}
-
-.stats-bar :deep(.n-statistic .n-statistic-value) {
-  font-size: 20px;
-}
-
-.stats-bar :deep(.n-statistic .n-statistic__label) {
-  font-size: 12px;
-}
-
-.warning-alert {
-  margin-bottom: 4px;
-}
-
-.subscription-info {
-  padding: 12px 16px;
-  background: linear-gradient(135deg, #f0f9ff 0%, #e8f4fd 100%);
-  border-radius: 8px;
-  border: 1px solid #c8e1f7;
-}
-
-.info-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #1890ff;
-  margin-bottom: 10px;
-}
-
-.info-content {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.info-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 13px;
-}
-
-.info-label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: #666;
-}
-
-.info-value {
-  font-weight: 500;
-  color: #333;
-}
-
-.traffic-progress {
-  margin: 4px 0;
-}
-
-.traffic-progress :deep(.n-progress) {
-  --n-rail-height: 8px !important;
-}
-
-.toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.success-badge {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  color: #18a058;
-}
-
-.yaml-preview {
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  overflow: hidden;
-  background: var(--code-color);
-}
-
-.yaml-preview :deep(.n-code) {
-  padding: 16px;
-  font-size: 12px;
-  line-height: 1.6;
-}
-</style>

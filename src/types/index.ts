@@ -11,6 +11,9 @@ export interface ConvertRequest {
   timeout_secs?: number;
   enable_tun?: boolean;
   custom_user_agent?: string;
+  enable_udp?: boolean;
+  enable_tfo?: boolean;
+  skip_cert_verify?: boolean;
 }
 
 export interface SubscriptionInfo {
@@ -61,6 +64,9 @@ export interface AppState {
   renameReplacement: string;
   enableTun: boolean;
   customUserAgent: string;
+  enableUdp: boolean;
+  enableTfo: boolean;
+  skipCertVerify: boolean;
 
   // State
   loading: boolean;

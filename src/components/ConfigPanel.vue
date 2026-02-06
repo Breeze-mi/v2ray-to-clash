@@ -13,7 +13,7 @@ import {
   NProgress,
   type SelectOption,
 } from 'naive-ui';
-import { HelpCircleOutline, RefreshOutline, EyeOutline } from '@vicons/ionicons5';
+import { RefreshOutline, EyeOutline } from '@vicons/ionicons5';
 import { useAppStore } from '../stores/app';
 
 const store = useAppStore();

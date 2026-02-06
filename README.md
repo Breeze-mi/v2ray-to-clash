@@ -11,7 +11,7 @@
 
 ## 下载
 
-前往 [Releases](https://github.com/你的用户名/localsub/releases) 下载最新版本。
+前往 [Releases](https://github.com/Breeze-mi/v2ray-to-clash/releases) 下载最新版本。
 
 ## 使用
 

@@ -455,6 +455,14 @@ fn parse_shadowsocks(link: &str) -> Result<Node> {
                 reason: "Invalid method:password format".into(),
             })?;
 
+        // Validate cipher
+        if !is_valid_ss_cipher(cipher) {
+            return Err(ConvertError::InvalidNodeFormat {
+                protocol: "ss".into(),
+                reason: format!("Unsupported cipher: {}", cipher),
+            });
+        }
+
         // Parse server:port
         let (server, port) = parse_host_port(server_port)?;
 
@@ -488,6 +496,14 @@ fn parse_shadowsocks(link: &str) -> Result<Node> {
             protocol: "ss".into(),
             reason: "Invalid method:password format".into(),
         })?;
+
+    // Validate cipher
+    if !is_valid_ss_cipher(cipher) {
+        return Err(ConvertError::InvalidNodeFormat {
+            protocol: "ss".into(),
+            reason: format!("Unsupported cipher: {}", cipher),
+        });
+    }
 
     let (server, port) = parse_host_port(server_port)?;
     let name = if name.is_empty() { server.clone() } else { name };
@@ -704,7 +720,7 @@ fn parse_ssr(link: &str) -> Result<Node> {
         }
     };
 
-    let port: u16 = rest_parts.get(0)
+    let port: u16 = rest_parts.first()
         .and_then(|s| s.parse().ok())
         .ok_or_else(|| ConvertError::InvalidNodeFormat {
             protocol: "ssr".into(),
@@ -715,6 +731,14 @@ fn parse_ssr(link: &str) -> Result<Node> {
     let method = rest_parts.get(2).unwrap_or(&"aes-256-cfb").to_string();
     let obfs = rest_parts.get(3).unwrap_or(&"plain").to_string();
     let password_b64 = rest_parts.get(4).unwrap_or(&"");
+
+    // Validate cipher
+    if !is_valid_ssr_cipher(&method) {
+        return Err(ConvertError::InvalidNodeFormat {
+            protocol: "ssr".into(),
+            reason: format!("Unsupported cipher: {}", method),
+        });
+    }
 
     // Decode password (also URL-safe base64)
     let password = decode_base64_flexible(password_b64)
@@ -854,8 +878,8 @@ fn parse_hysteria(link: &str) -> Result<Node> {
     use crate::node::HysteriaNode;
 
     // Normalize protocol prefix
-    let link = if link.starts_with("hy://") {
-        format!("hysteria://{}", &link[5..])
+    let link = if let Some(stripped) = link.strip_prefix("hy://") {
+        format!("hysteria://{}", stripped)
     } else {
         link.to_string()
     };
@@ -1008,7 +1032,7 @@ fn parse_tuic(link: &str) -> Result<Node> {
 
     // TUIC V5: tuic://uuid:password@server:port
     let uuid_str = url.username().to_string();
-    let password_str = url.password().map(|p| url_decode(p)).unwrap_or_default();
+    let password_str = url.password().map(url_decode).unwrap_or_default();
 
     let (uuid, password, token) = if !uuid_str.is_empty() {
         (Some(uuid_str), Some(password_str).filter(|s| !s.is_empty()), None)
@@ -1054,8 +1078,8 @@ fn parse_wireguard(link: &str) -> Result<Node> {
     use crate::node::WireGuardNode;
 
     // Normalize protocol prefix
-    let link = if link.starts_with("wg://") {
-        format!("wireguard://{}", &link[5..])
+    let link = if let Some(stripped) = link.strip_prefix("wg://") {
+        format!("wireguard://{}", stripped)
     } else {
         link.to_string()
     };

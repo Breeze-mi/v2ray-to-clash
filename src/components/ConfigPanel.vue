@@ -15,6 +15,7 @@ import {
 } from 'naive-ui';
 import { RefreshOutline, EyeOutline } from '@vicons/ionicons5';
 import { useAppStore } from '../stores/app';
+import { formatBytes, formatExpire } from '../utils/format';
 
 const store = useAppStore();
 
@@ -30,22 +31,6 @@ const includeError = ref<string | null>(null);
 const excludeError = ref<string | null>(null);
 const renameError = ref<string | null>(null);
 
-function formatBytes(bytes: number | undefined): string {
-  if (bytes === undefined || bytes === null) return '-';
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-function formatExpire(timestamp: number | undefined): string {
-  if (timestamp === undefined || timestamp === null) return '-';
-  if (timestamp === 0) return '永不过期';
-  const date = new Date(timestamp * 1000);
-  return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
-}
-
 const subInfo = computed(() => {
   const info = store.previewSubscriptionInfo;
   if (!info) return null;
@@ -55,11 +40,11 @@ const subInfo = computed(() => {
   const percentage = total > 0 ? Math.round((used / total) * 100) : 0;
 
   return {
-    used: formatBytes(used),
-    total: formatBytes(total),
-    upload: formatBytes(info.upload),
-    download: formatBytes(info.download),
-    expire: formatExpire(info.expire),
+    used: info.upload !== undefined && info.download !== undefined ? formatBytes(used) : '-',
+    total: info.total !== undefined ? formatBytes(total) : '-',
+    upload: info.upload !== undefined ? formatBytes(info.upload) : '-',
+    download: info.download !== undefined ? formatBytes(info.download) : '-',
+    expire: info.expire !== undefined ? formatExpire(info.expire) : '-',
     percentage,
   };
 });

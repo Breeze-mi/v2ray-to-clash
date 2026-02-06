@@ -1003,14 +1003,12 @@ pub fn normalize_cipher(cipher: &str) -> String {
 }
 
 /// Check if a Shadowsocks cipher is valid
-#[allow(dead_code)]
 pub fn is_valid_ss_cipher(cipher: &str) -> bool {
     let normalized = normalize_cipher(cipher);
     SS_VALID_CIPHERS.contains(&normalized.as_str())
 }
 
 /// Check if an SSR cipher is valid
-#[allow(dead_code)]
 pub fn is_valid_ssr_cipher(cipher: &str) -> bool {
     let normalized = normalize_cipher(cipher);
     SSR_VALID_CIPHERS.contains(&normalized.as_str())

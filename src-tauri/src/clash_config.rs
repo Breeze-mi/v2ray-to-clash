@@ -744,13 +744,13 @@ fn format_group_yaml(group: &serde_yaml::Value) -> Result<String, serde_yaml::Er
 
     if let serde_yaml::Value::Mapping(map) = group {
         // Extract values we need to reorder
-        let name = map.get(&serde_yaml::Value::String("name".to_string()));
-        let group_type = map.get(&serde_yaml::Value::String("type".to_string()));
-        let url = map.get(&serde_yaml::Value::String("url".to_string()));
-        let interval = map.get(&serde_yaml::Value::String("interval".to_string()));
-        let timeout = map.get(&serde_yaml::Value::String("timeout".to_string()));
-        let tolerance = map.get(&serde_yaml::Value::String("tolerance".to_string()));
-        let proxies = map.get(&serde_yaml::Value::String("proxies".to_string()));
+        let name = map.get(serde_yaml::Value::String("name".to_string()));
+        let group_type = map.get(serde_yaml::Value::String("type".to_string()));
+        let url = map.get(serde_yaml::Value::String("url".to_string()));
+        let interval = map.get(serde_yaml::Value::String("interval".to_string()));
+        let timeout = map.get(serde_yaml::Value::String("timeout".to_string()));
+        let tolerance = map.get(serde_yaml::Value::String("tolerance".to_string()));
+        let proxies = map.get(serde_yaml::Value::String("proxies".to_string()));
 
         // Output in correct order: name, type, url, interval, timeout, tolerance, proxies
         if let Some(n) = name {
@@ -820,7 +820,7 @@ fn format_yaml_value(value: &serde_yaml::Value) -> String {
                s.contains('|') || s.contains('>') || s.contains('\'') ||
                s.contains('"') || s.contains('%') || s.contains('@') ||
                s.contains('`') || s.starts_with('-') || s.starts_with('?') ||
-               s.chars().any(|c| !c.is_ascii()) {
+               !s.is_ascii() {
                 // Use double quotes and escape internal quotes
                 format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
             } else if s.is_empty() {

@@ -17,6 +17,7 @@ import {
   WarningOutline,
 } from '@vicons/ionicons5';
 import { useAppStore } from '../stores/app';
+import { formatBytes, formatExpire } from '../utils/format';
 
 const store = useAppStore();
 const message = useMessage();
@@ -25,29 +26,6 @@ const yamlPreview = computed(() => {
   if (!store.result) return '';
   return store.result.yaml;
 });
-
-function formatBytes(bytes: number | undefined): string {
-  if (bytes === undefined || bytes === null) return '-';
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-function formatExpire(timestamp: number | undefined): string {
-  if (timestamp === undefined || timestamp === null) return '-';
-  if (timestamp === 0) return '永久';
-  const date = new Date(timestamp * 1000);
-  const now = new Date();
-  const diff = date.getTime() - now.getTime();
-  const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
-  const dateStr = date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
-  if (days < 0) return `已过期 (${dateStr})`;
-  if (days === 0) return `今天到期`;
-  if (days <= 7) return `${days} 天后 (${dateStr})`;
-  return dateStr;
-}
 
 const usedPercentage = computed(() => {
   const info = store.result?.subscription_info;

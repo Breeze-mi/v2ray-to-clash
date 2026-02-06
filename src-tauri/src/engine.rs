@@ -278,6 +278,10 @@ impl SubscriptionEngine {
         let mut result_lines = Vec::new();
         let mut first_sub_info: Option<SubscriptionInfo> = None;
 
+        // Separate URLs from direct content
+        let mut urls = Vec::new();
+        let mut direct_content = Vec::new();
+
         for item in items {
             let item = item.trim();
             if item.is_empty() {
@@ -285,8 +289,22 @@ impl SubscriptionEngine {
             }
 
             if item.starts_with("http://") || item.starts_with("https://") {
-                // Fetch URL content with info
-                match self.http_client.fetch_with_info(item).await {
+                urls.push(item.to_string());
+            } else {
+                direct_content.push(item.to_string());
+            }
+        }
+
+        // Fetch all URLs concurrently
+        if !urls.is_empty() {
+            let fetch_futures: Vec<_> = urls.iter()
+                .map(|url| self.http_client.fetch_with_info(url))
+                .collect();
+
+            let results = futures::future::join_all(fetch_futures).await;
+
+            for result in results {
+                match result {
                     Ok(fetched) => {
                         // Keep the first subscription info we encounter
                         if first_sub_info.is_none() {
@@ -307,11 +325,11 @@ impl SubscriptionEngine {
                         // missing nodes in the preview / conversion result
                     }
                 }
-            } else {
-                // Direct content (links or base64)
-                result_lines.push(item.to_string());
             }
         }
+
+        // Add direct content
+        result_lines.extend(direct_content);
 
         Ok((result_lines.join("\n"), first_sub_info))
     }

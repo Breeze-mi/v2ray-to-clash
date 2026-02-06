@@ -168,7 +168,7 @@ fn parse_proxy_group_line(line: &str) -> Option<ParsedProxyGroup> {
     // For url-test/fallback/load-balance, parse from the end to find URL and interval params
     let mut proxy_end_idx = proxy_parts.len();
 
-    if needs_url_test && proxy_parts.len() >= 1 {
+    if needs_url_test && !proxy_parts.is_empty() {
         // Check the last part for interval params (e.g., "300", "300,,50", "300,150,50")
         let last = proxy_parts[proxy_parts.len() - 1];
         if is_interval_param(last) {
@@ -438,7 +438,7 @@ pub fn to_clash_proxy_groups(
         let proxies = resolve_proxy_group(group, nodes, &all_group_names);
         let proxies_yaml: Vec<serde_yaml::Value> = proxies
             .into_iter()
-            .map(|s| serde_yaml::Value::String(s))
+            .map(serde_yaml::Value::String)
             .collect();
         map.insert("proxies".into(), serde_yaml::Value::Sequence(proxies_yaml));
 

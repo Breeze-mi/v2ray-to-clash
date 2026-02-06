@@ -1,6 +1,6 @@
 [package]
 name = "v2ray-clash"
-version = "0.1.3"
+version = "0.1.4"
 description = "LocalSub - Local Subscription Converter for Clash"
 authors = ["you"]
 edition = "2021"
@@ -26,7 +26,9 @@ serde_yaml = "0.9"
 indexmap = { version = "2", features = ["serde"] }
 
 # HTTP client for fetching subscriptions and configs
-reqwest = { version = "0.12", features = ["rustls-tls"], default-features = false }
+reqwest = { version = "0.12", features = [
+    "rustls-tls",
+], default-features = false }
 
 # INI parsing for ACL4SSR config files
 rust-ini = "0.21"

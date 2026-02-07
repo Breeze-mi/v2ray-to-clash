@@ -57,7 +57,7 @@ const themeOverrides: GlobalThemeOverrides = {
               Clash/Mihomo
             </span>
           </div>
-          <span class="text-xs text-slate-400 font-medium">v0.1.4</span>
+          <span class="text-xs text-slate-400 font-medium">v0.1.5</span>
         </header>
 
         <!-- Main Content -->

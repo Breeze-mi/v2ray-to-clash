@@ -1,6 +1,6 @@
 [package]
 name = "v2ray-clash"
-version = "0.1.4"
+version = "0.1.5"
 description = "LocalSub - Local Subscription Converter for Clash"
 authors = ["you"]
 edition = "2021"

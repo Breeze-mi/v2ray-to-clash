@@ -16,6 +16,8 @@ export const useAppStore = defineStore('app', {
     enableUdp: true,
     enableTfo: false,
     skipCertVerify: false,
+    apiListenLan: true,
+    apiSecret: '',
     loading: false,
     previewing: false,
     error: null,
@@ -71,6 +73,8 @@ export const useAppStore = defineStore('app', {
           enable_udp: this.enableUdp,
           enable_tfo: this.enableTfo,
           skip_cert_verify: this.skipCertVerify,
+          api_listen_lan: this.apiListenLan,
+          api_secret: this.apiSecret || undefined,
           timeout_secs: 30,
         };
 
@@ -136,6 +140,8 @@ export const useAppStore = defineStore('app', {
       this.enableUdp = true;
       this.enableTfo = false;
       this.skipCertVerify = false;
+      this.apiListenLan = true;
+      this.apiSecret = '';
       this.result = null;
       this.previewNodes = [];
       this.previewSubscriptionInfo = null;

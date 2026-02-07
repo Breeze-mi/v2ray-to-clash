@@ -332,6 +332,13 @@ impl ClashConfigBuilder {
         self
     }
 
+    /// Set API settings for external controller
+    pub fn with_api_settings(mut self, external_controller: String, secret: Option<String>) -> Self {
+        self.config.external_controller = Some(external_controller);
+        self.config.secret = secret;
+        self
+    }
+
     /// Add proxy nodes with global options applied
     pub fn with_nodes(mut self, nodes: &[Node]) -> Self {
         self.config.proxies = nodes
@@ -543,10 +550,17 @@ impl ClashConfigBuilder {
         output.push_str(&format!("port: {}\n", config.mixed_port));
         output.push_str(&format!("socks-port: {}\n", config.mixed_port + 1));
         output.push_str(&format!("allow-lan: {}\n", config.allow_lan));
-        output.push_str("mode: Rule\n");
+        output.push_str(&format!("mode: {}\n", config.mode));
         output.push_str(&format!("log-level: {}\n", config.log_level));
         output.push_str(&format!("ipv6: {}\n", config.ipv6));
-        output.push_str("external-controller: :9090\n");
+        if let Some(ec) = &config.external_controller {
+            let v = serde_yaml::Value::String(ec.clone());
+            output.push_str(&format!("external-controller: {}\n", format_yaml_value_simple(&v)));
+        }
+        if let Some(secret) = &config.secret {
+            let v = serde_yaml::Value::String(secret.clone());
+            output.push_str(&format!("secret: {}\n", format_yaml_value_simple(&v)));
+        }
         output.push('\n');
 
         // TUN settings (optional)
@@ -585,11 +599,16 @@ impl ClashConfigBuilder {
             output.push_str("# 规则集\n");
             output.push_str("rule-providers:\n");
             for rp in &config.rule_providers {
+                let format = infer_rule_provider_format(&rp.url);
+                let path = rule_provider_path(&rp.name, format);
                 output.push_str(&format!("  {}:\n", rp.name));
                 output.push_str(&format!("    type: {}\n", rp.provider_type));
                 output.push_str(&format!("    behavior: {}\n", rp.behavior));
                 output.push_str(&format!("    url: \"{}\"\n", rp.url));
-                output.push_str(&format!("    path: ./ruleset/{}.yaml\n", rp.name));
+                if let Some(fmt) = format {
+                    output.push_str(&format!("    format: {}\n", fmt));
+                }
+                output.push_str(&format!("    path: \"{}\"\n", path));
                 output.push_str(&format!("    interval: {}\n", rp.interval));
             }
             output.push('\n');
@@ -627,6 +646,30 @@ fn derive_provider_name(url: &str, index: usize) -> String {
         }
     }
     format!("provider-{}", index)
+}
+
+/// Infer rule-provider format from URL extension.
+fn infer_rule_provider_format(url: &str) -> Option<&'static str> {
+    let lower = url.to_ascii_lowercase();
+    if lower.ends_with(".mrs") {
+        Some("mrs")
+    } else if lower.ends_with(".yaml") || lower.ends_with(".yml") {
+        Some("yaml")
+    } else if lower.ends_with(".list") || lower.ends_with(".txt") {
+        Some("text")
+    } else {
+        None
+    }
+}
+
+/// Build a ruleset path matching the inferred format.
+fn rule_provider_path(name: &str, format: Option<&str>) -> String {
+    let ext = match format {
+        Some("mrs") => "mrs",
+        Some("text") => "txt",
+        _ => "yaml",
+    };
+    format!("./ruleset/{}.{}", name, ext)
 }
 
 /// Format a single proxy node to YAML with proper indentation and quoting

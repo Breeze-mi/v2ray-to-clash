@@ -63,6 +63,14 @@ pub struct ConvertRequest {
     /// Skip certificate verification for all nodes (global switch)
     #[serde(default)]
     pub skip_cert_verify: bool,
+
+    /// Listen API on LAN (0.0.0.0) instead of localhost
+    #[serde(default)]
+    pub api_listen_lan: bool,
+
+    /// Secret for API access (optional)
+    #[serde(default)]
+    pub api_secret: Option<String>,
 }
 
 fn default_timeout() -> u64 {
@@ -201,6 +209,20 @@ impl SubscriptionEngine {
         let mut builder = ClashConfigBuilder::new()
             .with_nodes(&nodes)
             .with_global_options(request.enable_udp, request.enable_tfo, request.skip_cert_verify);
+
+        // API settings (external-controller + secret)
+        let external_controller = if request.api_listen_lan {
+            "0.0.0.0:9090".to_string()
+        } else {
+            "127.0.0.1:9090".to_string()
+        };
+        let api_secret = request
+            .api_secret
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
+        builder = builder.with_api_settings(external_controller, api_secret);
 
         if request.enable_tun {
             builder = builder.with_tun();
@@ -415,12 +437,12 @@ fn clean_input(content: &str) -> String {
     let mut content = content.to_string();
 
     // Remove UTF-8 BOM if present
-    if content.starts_with('\u{FEFF}') {
-        content = content[3..].to_string();
+    if let Some(rest) = content.strip_prefix('\u{FEFF}') {
+        content = rest.to_string();
     }
-    // Also handle the raw BOM bytes in case they weren't decoded
-    if content.starts_with("\u{EF}\u{BB}\u{BF}") {
-        content = content[3..].to_string();
+    // Also handle raw BOM bytes in case they were decoded as literal characters
+    if let Some(rest) = content.strip_prefix("\u{EF}\u{BB}\u{BF}") {
+        content = rest.to_string();
     }
 
     // Normalize line endings: \r\n -> \n, \r -> \n

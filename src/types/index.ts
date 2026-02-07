@@ -14,6 +14,8 @@ export interface ConvertRequest {
   enable_udp?: boolean;
   enable_tfo?: boolean;
   skip_cert_verify?: boolean;
+  api_listen_lan?: boolean;
+  api_secret?: string;
 }
 
 export interface SubscriptionInfo {
@@ -67,6 +69,8 @@ export interface AppState {
   enableUdp: boolean;
   enableTfo: boolean;
   skipCertVerify: boolean;
+  apiListenLan: boolean;
+  apiSecret: string;
 
   // State
   loading: boolean;

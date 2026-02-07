@@ -207,6 +207,18 @@ async function validateRenameRegex() {
                 <span class="text-xs text-slate-600">跳过证书验证</span>
                 <NSwitch v-model:value="store.skipCertVerify" size="small" />
               </div>
+              <div class="flex justify-between items-center py-1">
+                <div class="flex items-center gap-1">
+                  <span class="text-xs text-slate-600">允许局域网控制 API</span>
+                  <NTooltip>
+                    <template #trigger>
+                      <span class="i-carbon-help text-slate-400 w-3 h-3 cursor-help"></span>
+                    </template>
+                   
+                  </NTooltip>
+                </div>
+                <NSwitch v-model:value="store.apiListenLan" size="small" />
+              </div>
             </div>
           </div>
 
@@ -224,6 +236,23 @@ async function validateRenameRegex() {
             <NInput
               v-model:value="store.customUserAgent"
               placeholder="默认: clash-verge/v2.0.0"
+              size="small"
+            />
+          </div>
+
+          <!-- API Secret -->
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center gap-1">
+              <span class="text-xs text-slate-500">API Secret（可选）</span>
+              <NTooltip>
+                <template #trigger>
+                  <span class="i-carbon-help text-slate-400 w-3 h-3 cursor-help"></span>
+                </template>
+              </NTooltip>
+            </div>
+            <NInput
+              v-model:value="store.apiSecret"
+              placeholder="建议设置一个随机字符串"
               size="small"
             />
           </div>

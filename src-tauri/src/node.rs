@@ -738,6 +738,9 @@ pub struct WireGuardNode {
     /// Client IPv6 address in WireGuard network
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ipv6: Option<String>,
+    /// Allowed IPs (traffic selectors)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed_ips: Option<Vec<String>>,
     /// Pre-shared key
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pre_shared_key: Option<String>,
@@ -800,6 +803,12 @@ impl WireGuardNode {
             if !dns.is_empty() {
                 map.insert("remote-dns-resolve".into(), v_bool(true));
                 map.insert("dns".into(), v_str_seq(dns));
+            }
+        }
+
+        if let Some(allowed_ips) = &self.allowed_ips {
+            if !allowed_ips.is_empty() {
+                map.insert("allowed-ips".into(), v_str_seq(allowed_ips));
             }
         }
 

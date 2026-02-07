@@ -40,8 +40,8 @@ pub fn parse_subscription_content(content: &str) -> Result<Vec<Node>> {
             Ok(node) => nodes.push(node),
             Err(e) => {
                 // Collect warning but continue parsing other nodes
-                let truncated_link = if line.len() > 50 {
-                    format!("{}...", &line[..50])
+                let truncated_link = if line.chars().count() > 50 {
+                    format!("{}...", line.chars().take(50).collect::<String>())
                 } else {
                     line.to_string()
                 };
@@ -1167,6 +1167,18 @@ fn parse_wireguard(link: &str) -> Result<Node> {
             .collect::<Vec<_>>()
     }).filter(|v| !v.is_empty());
 
+    // Allowed IPs (traffic selectors)
+    let allowed_ips = get_param("allowed-ips")
+        .or_else(|| get_param("allowed_ips"))
+        .or_else(|| get_param("allowedips"))
+        .map(|s| {
+            s.split(',')
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .filter(|v| !v.is_empty());
+
     Ok(Node::WireGuard(WireGuardNode {
         name,
         server,
@@ -1179,6 +1191,7 @@ fn parse_wireguard(link: &str) -> Result<Node> {
         reserved,
         mtu,
         dns,
+        allowed_ips,
     }))
 }
 

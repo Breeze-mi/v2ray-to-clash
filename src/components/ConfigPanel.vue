@@ -88,14 +88,14 @@ async function validateRenameRegex() {
           <template #trigger>
             <span class="i-carbon-help text-slate-400 w-3.5 h-3.5 cursor-help"></span>
           </template>
-          支持订阅 URL 或直接粘贴节点链接，每行一个
+          直接粘贴节点链接，建议每行一个
         </NTooltip>
       </div>
       <NInput
         v-model:value="store.subscription"
         type="textarea"
         placeholder="输入订阅链接或节点内容...
-支持: 订阅URL、VLESS/VMess/SS/SSR/Trojan/Hysteria/TUIC链接、Base64"
+支持: VLESS/VMess/SS/SSR/Trojan/Hysteria/TUIC链接、Base64"
         :rows="4"
         size="small"
         class="font-mono text-xs"
@@ -129,7 +129,18 @@ async function validateRenameRegex() {
     </div>
     <!-- 高级选项 -->
     <NCollapse>
-      <NCollapseItem title="高级选项" name="advanced">
+      <NCollapseItem name="advanced">
+        <template #header>
+          <div class="flex items-center gap-1">
+            <span>高级选项</span>
+            <NTooltip>
+              <template #trigger>
+                <span class="i-carbon-help text-slate-400 w-3.5 h-3.5 cursor-help"></span>
+              </template>
+              按需修改，一般默认即可
+            </NTooltip>
+          </div>
+        </template>
         <div class="flex flex-col gap-4 py-1">
           <!-- 节点筛选 -->
           <div class="flex flex-col gap-2">
@@ -222,6 +233,24 @@ async function validateRenameRegex() {
             </div>
           </div>
 
+          <!-- VLESS Reality 覆盖 -->
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center gap-1">
+              <span class="text-xs text-slate-500">Reality Short-ID 覆盖（可选）</span>
+              <NTooltip>
+                <template #trigger>
+                  <span class="i-carbon-help text-slate-400 w-3 h-3 cursor-help"></span>
+                </template>
+                订阅源 sid 错误时可手动覆盖，支持 1-16 位十六进制
+              </NTooltip>
+            </div>
+            <NInput
+              v-model:value="store.vlessRealityShortIdOverride"
+              placeholder="留空则按原链接"
+              size="small"
+            />
+          </div>
+
           <!-- 自定义 UA -->
           <div class="flex flex-col gap-2">
             <div class="flex items-center gap-1">
@@ -236,24 +265,6 @@ async function validateRenameRegex() {
             <NInput
               v-model:value="store.customUserAgent"
               placeholder="默认: clash-verge/v2.0.0"
-              size="small"
-            />
-          </div>
-
-          <!-- API Secret -->
-          <div class="flex flex-col gap-2">
-            <div class="flex items-center gap-1">
-              <span class="text-xs text-slate-500">API Secret（可选）</span>
-              <NTooltip>
-                <template #trigger>
-                  <span class="i-carbon-help text-slate-400 w-3 h-3 cursor-help"></span>
-                </template>
-                设置后会写入 secret，用于远程控制鉴权
-              </NTooltip>
-            </div>
-            <NInput
-              v-model:value="store.apiSecret"
-              placeholder="建议设置一个随机字符串"
               size="small"
             />
           </div>

@@ -1,18 +1,19 @@
-﻿//! Main subscription conversion engine
+//! Main subscription conversion engine
 //! Orchestrates fetching, parsing, filtering, and YAML generation
 
-use serde::{Deserialize, Serialize};
 use regex::Regex;
-use url::Url;
+use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
+use url::Url;
 
 use indexmap::IndexMap;
 
 use crate::clash_config::{ClashConfigBuilder, RuleProviderOptions};
 use crate::error::{ConvertError, Result};
-use crate::filter::{filter_nodes, rename_nodes, deduplicate_nodes};
+use crate::filter::{deduplicate_nodes, filter_nodes, rename_nodes};
 use crate::http_client::{HttpClient, SubscriptionInfo};
 use crate::ini_parser::parse_ini_config;
+use crate::node::Node;
 use crate::parser::parse_subscription_content;
 
 /// Conversion request from frontend
@@ -68,6 +69,10 @@ pub struct ConvertRequest {
     /// Skip certificate verification for all nodes (global switch)
     #[serde(default)]
     pub skip_cert_verify: bool,
+
+    /// Override VLESS Reality short-id for all parsed nodes (optional)
+    #[serde(default)]
+    pub vless_reality_short_id_override: Option<String>,
 
     /// Listen API on LAN (0.0.0.0) instead of localhost
     #[serde(default)]
@@ -156,12 +161,41 @@ impl SubscriptionEngine {
         let mut warnings = Vec::new();
 
         // Step 1: Parse subscription content
-        let (raw_content, subscription_info) = self.resolve_subscription(&request.subscription).await?;
+        let (raw_content, subscription_info, fetch_warnings) =
+            self.resolve_subscription(&request.subscription).await?;
+        warnings.extend(fetch_warnings);
         let mut nodes = parse_subscription_content(&raw_content)?;
         let initial_count = nodes.len();
 
         if nodes.is_empty() {
-            return Err(ConvertError::Internal("No valid nodes found in subscription".into()));
+            return Err(ConvertError::Internal(
+                "No valid nodes found in subscription".into(),
+            ));
+        }
+
+        let (reality_short_id_override, override_invalid) =
+            normalize_reality_short_id(request.vless_reality_short_id_override.as_deref());
+        if override_invalid {
+            warnings.push(
+                "Ignored invalid Reality short-id override (must be 1-16 hex chars)".to_string(),
+            );
+        }
+        if let Some(ref override_sid) = reality_short_id_override {
+            let patched = apply_reality_short_id_override(&mut nodes, override_sid);
+            if patched > 0 {
+                warnings.push(format!(
+                    "Applied Reality short-id override to {} node(s)",
+                    patched
+                ));
+            }
+        } else {
+            let suspicious_sid_count = count_suspicious_reality_short_ids(&nodes);
+            if suspicious_sid_count > 0 {
+                warnings.push(format!(
+                    "Detected {} Reality node(s) with short sid (<4 hex chars). If connect fails, use Reality Short-ID override or verify subscription source.",
+                    suspicious_sid_count
+                ));
+            }
         }
 
         // Step 2: Deduplicate nodes
@@ -183,12 +217,14 @@ impl SubscriptionEngine {
 
         if nodes.is_empty() {
             return Err(ConvertError::Internal(
-                "All nodes were filtered out. Check your filter patterns.".into()
+                "All nodes were filtered out. Check your filter patterns.".into(),
             ));
         }
 
         // Step 4: Apply node renaming
-        if let (Some(pattern), Some(replacement)) = (&request.rename_pattern, &request.rename_replacement) {
+        if let (Some(pattern), Some(replacement)) =
+            (&request.rename_pattern, &request.rename_replacement)
+        {
             if !pattern.is_empty() {
                 nodes = rename_nodes(nodes, pattern, replacement)?;
             }
@@ -234,7 +270,11 @@ impl SubscriptionEngine {
         // Step 6: Build Clash config
         let mut builder = ClashConfigBuilder::new()
             .with_nodes(&nodes)
-            .with_global_options(request.enable_udp, request.enable_tfo, request.skip_cert_verify);
+            .with_global_options(
+                request.enable_udp,
+                request.enable_tfo,
+                request.skip_cert_verify,
+            );
 
         // API settings (external-controller + secret)
         let external_controller = if request.api_listen_lan {
@@ -267,18 +307,20 @@ impl SubscriptionEngine {
         let (builder, group_count, rule_count) = if let Some(ref ini) = ini_config {
             let group_count = ini.proxy_groups.len();
             let rule_count = ini.rules.len() + ini.ruleset_urls.len();
-            (builder.with_ini_config(ini, &nodes), group_count, rule_count)
+            (
+                builder.with_ini_config(ini, &nodes),
+                group_count,
+                rule_count,
+            )
         } else {
-            let builder = builder
-                .with_default_groups(&nodes)
-                .with_default_rules();
+            let builder = builder.with_default_groups(&nodes).with_default_rules();
             (builder, 5, 7) // Default has 5 groups and 7 rules
         };
 
         // Step 7: Generate YAML
-        let yaml = builder.build_yaml().map_err(|e| {
-            ConvertError::YamlSerializeError(e.to_string())
-        })?;
+        let yaml = builder
+            .build_yaml()
+            .map_err(|e| ConvertError::YamlSerializeError(e.to_string()))?;
 
         Ok(ConvertResult {
             yaml,
@@ -294,14 +336,18 @@ impl SubscriptionEngine {
     /// Resolve subscription content only (for node preview, no conversion).
     /// Fetches URLs and decodes base64 if needed.
     pub async fn resolve_content(&self, content: &str) -> Result<String> {
-        let (raw, _) = self.resolve_subscription(content).await?;
+        let (raw, _, _) = self.resolve_subscription(content).await?;
         Ok(raw)
     }
 
     /// Resolve subscription content with subscription info (for node preview).
     /// Returns both the content and subscription info if available.
-    pub async fn resolve_content_with_info(&self, content: &str) -> Result<(String, Option<SubscriptionInfo>)> {
-        self.resolve_subscription(content).await
+    pub async fn resolve_content_with_info(
+        &self,
+        content: &str,
+    ) -> Result<(String, Option<SubscriptionInfo>)> {
+        let (raw, info, _) = self.resolve_subscription(content).await?;
+        Ok((raw, info))
     }
 
     /// Resolve subscription content (fetch URLs, decode base64, etc.)
@@ -311,7 +357,10 @@ impl SubscriptionEngine {
     /// - Multiple URLs separated by `|` or newlines
     /// - Direct links (vless://, vmess://, etc.)
     /// - Base64 encoded subscription content
-    async fn resolve_subscription(&self, content: &str) -> Result<(String, Option<SubscriptionInfo>)> {
+    async fn resolve_subscription(
+        &self,
+        content: &str,
+    ) -> Result<(String, Option<SubscriptionInfo>, Vec<String>)> {
         // Step 1: Clean input - remove BOM, normalize line endings, trim whitespace
         let content = clean_input(content);
 
@@ -321,6 +370,7 @@ impl SubscriptionEngine {
         // Step 3: Process each item
         let mut result_lines = Vec::new();
         let mut first_sub_info: Option<SubscriptionInfo> = None;
+        let mut fetch_warnings = Vec::new();
 
         // Separate URLs from direct content
         let mut urls = Vec::new();
@@ -341,7 +391,8 @@ impl SubscriptionEngine {
 
         // Fetch all URLs concurrently
         if !urls.is_empty() {
-            let fetch_futures: Vec<_> = urls.iter()
+            let fetch_futures: Vec<_> = urls
+                .iter()
                 .map(|url| self.http_client.fetch_with_info(url))
                 .collect();
 
@@ -364,9 +415,8 @@ impl SubscriptionEngine {
                             }
                         }
                     }
-                    Err(_e) => {
-                        // Silently skip failed URLs; the user will see
-                        // missing nodes in the preview / conversion result
+                    Err(e) => {
+                        fetch_warnings.push(format!("Failed to fetch URL: {}", e));
                     }
                 }
             }
@@ -375,7 +425,7 @@ impl SubscriptionEngine {
         // Add direct content
         result_lines.extend(direct_content);
 
-        Ok((result_lines.join("\n"), first_sub_info))
+        Ok((result_lines.join("\n"), first_sub_info, fetch_warnings))
     }
 
     /// Get predefined INI config URLs
@@ -477,7 +527,10 @@ fn clean_input(content: &str) -> String {
 /// Decode subscription body if it's base64 encoded
 /// Returns decoded content or original content if not base64
 fn decode_subscription_body(body: &str) -> String {
-    use base64::{engine::general_purpose::{STANDARD, URL_SAFE, URL_SAFE_NO_PAD}, Engine as _};
+    use base64::{
+        engine::general_purpose::{STANDARD, URL_SAFE, URL_SAFE_NO_PAD},
+        Engine as _,
+    };
 
     let body = clean_input(body);
 
@@ -493,18 +546,25 @@ fn decode_subscription_body(body: &str) -> String {
     // Also check if it contains newlines but ALL lines look like base64
     let lines_all_base64 = body.lines().all(|line| {
         let line = line.trim();
-        line.is_empty() || (!line.contains("://") && line.chars().all(|c| {
-            c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '='
-                || c == '-' || c == '_'
-        }))
+        line.is_empty()
+            || (!line.contains("://")
+                && line.chars().all(|c| {
+                    c.is_ascii_alphanumeric()
+                        || c == '+'
+                        || c == '/'
+                        || c == '='
+                        || c == '-'
+                        || c == '_'
+                }))
     });
 
-    if is_likely_base64 || (body.lines().count() == 1 && lines_all_base64) {
+    if (is_likely_base64 || lines_all_base64) && !body.is_empty() {
         // Try to decode as base64
         let encoded = body.replace(['\n', '\r', ' '], "");
 
         // Try different base64 variants
-        let decoded = STANDARD.decode(&encoded)
+        let decoded = STANDARD
+            .decode(&encoded)
             .or_else(|_| URL_SAFE.decode(&encoded))
             .or_else(|_| URL_SAFE_NO_PAD.decode(&encoded))
             .or_else(|_| {
@@ -514,7 +574,8 @@ fn decode_subscription_body(body: &str) -> String {
                     3 => format!("{}=", encoded),
                     _ => encoded.clone(),
                 };
-                STANDARD.decode(&padded)
+                STANDARD
+                    .decode(&padded)
                     .or_else(|_| URL_SAFE.decode(&padded))
             });
 
@@ -535,6 +596,53 @@ fn normalize_non_empty(input: Option<&str>) -> Option<String> {
     input
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+}
+
+fn normalize_reality_short_id(input: Option<&str>) -> (Option<String>, bool) {
+    let Some(raw) = input else {
+        return (None, false);
+    };
+
+    let normalized = raw.trim().trim_start_matches("0x").to_ascii_lowercase();
+
+    if normalized.is_empty() {
+        return (None, false);
+    }
+
+    if normalized.len() > 16 || !normalized.chars().all(|c| c.is_ascii_hexdigit()) {
+        return (None, true);
+    }
+
+    (Some(normalized), false)
+}
+
+fn apply_reality_short_id_override(nodes: &mut [Node], short_id: &str) -> usize {
+    let mut patched = 0;
+    for node in nodes {
+        if let Node::Vless(vless) = node {
+            if let Some(reality) = &mut vless.reality_opts {
+                reality.short_id = Some(short_id.to_string());
+                patched += 1;
+            }
+        }
+    }
+    patched
+}
+
+fn count_suspicious_reality_short_ids(nodes: &[Node]) -> usize {
+    nodes
+        .iter()
+        .filter(|node| {
+            if let Node::Vless(vless) = node {
+                if let Some(reality) = &vless.reality_opts {
+                    if let Some(sid) = &reality.short_id {
+                        return !sid.is_empty() && sid.len() < 4;
+                    }
+                }
+            }
+            false
+        })
+        .count()
 }
 /// Split mixed input into individual items by delimiters or known scheme prefixes.
 fn split_input_items(content: &str) -> Vec<String> {
@@ -596,8 +704,10 @@ fn split_by_schemes(item: &str) -> Vec<String> {
         })
     } else {
         SCHEME_PROXY_RE.get_or_init(|| {
-            Regex::new(r"(?i)(?:vless|vmess|ssr|ss|trojan|hysteria2|hy2|hysteria|hy|tuic|wireguard|wg)://")
-                .expect("valid scheme regex")
+            Regex::new(
+                r"(?i)(?:vless|vmess|ssr|ss|trojan|hysteria2|hy2|hysteria|hy|tuic|wireguard|wg)://",
+            )
+            .expect("valid scheme regex")
         })
     };
     let mut indices: Vec<usize> = re.find_iter(item).map(|m| m.start()).collect();
@@ -648,6 +758,9 @@ fn parse_rule_provider_header(raw: Option<&str>) -> Option<IndexMap<String, Stri
         headers.insert(key.to_string(), value.to_string());
     }
 
-    if headers.is_empty() { None } else { Some(headers) }
+    if headers.is_empty() {
+        None
+    } else {
+        Some(headers)
+    }
 }
-

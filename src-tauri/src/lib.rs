@@ -2,18 +2,39 @@
 //!
 //! A privacy-focused subscription conversion tool that runs entirely locally.
 
+pub mod clash_config;
+pub mod engine;
 pub mod error;
+pub mod filter;
+pub mod http_client;
+pub mod ini_parser;
 pub mod node;
 pub mod parser;
-pub mod filter;
-pub mod ini_parser;
-pub mod clash_config;
-pub mod http_client;
-pub mod engine;
 
 use engine::{ConvertRequest, ConvertResult, PresetConfig, SubscriptionEngine};
+use error::ConvertError;
 use http_client::SubscriptionInfo;
 use serde::Serialize;
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// Create SubscriptionEngine with optional custom user agent
+fn create_subscription_engine(
+    timeout_secs: u64,
+    custom_user_agent: Option<&String>,
+) -> Result<SubscriptionEngine, ConvertError> {
+    if let Some(ua) = custom_user_agent {
+        if !ua.is_empty() {
+            SubscriptionEngine::with_user_agent(timeout_secs, ua)
+        } else {
+            SubscriptionEngine::new(timeout_secs)
+        }
+    } else {
+        SubscriptionEngine::new(timeout_secs)
+    }
+}
 
 // ============================================================================
 // Tauri Commands
@@ -38,15 +59,8 @@ pub struct ParseNodesResult {
 /// Convert subscription to Clash YAML config
 #[tauri::command]
 async fn convert_subscription(request: ConvertRequest) -> Result<ConvertResult, String> {
-    let engine = if let Some(ref ua) = request.custom_user_agent {
-        if !ua.is_empty() {
-            SubscriptionEngine::with_user_agent(request.timeout_secs, ua)
-        } else {
-            SubscriptionEngine::new(request.timeout_secs)
-        }
-    } else {
-        SubscriptionEngine::new(request.timeout_secs)
-    }.map_err(|e| e.to_string())?;
+    let engine = create_subscription_engine(request.timeout_secs, request.custom_user_agent.as_ref())
+        .map_err(|e| e.to_string())?;
 
     engine.convert(request).await.map_err(|e| e.to_string())
 }
@@ -63,32 +77,39 @@ async fn parse_nodes(
     content: String,
     include_regex: Option<String>,
     exclude_regex: Option<String>,
+    custom_user_agent: Option<String>,
+    timeout_secs: Option<u64>,
 ) -> Result<ParseNodesResult, String> {
-    let engine = SubscriptionEngine::new(30).map_err(|e| e.to_string())?;
+    let timeout = timeout_secs.unwrap_or(30);
+    let engine = create_subscription_engine(timeout, custom_user_agent.as_ref())
+        .map_err(|e| e.to_string())?;
 
     // Resolve subscription content (fetch URLs if needed) with subscription info
-    let (raw, subscription_info) = engine.resolve_content_with_info(&content).await.map_err(|e| e.to_string())?;
+    let (raw, subscription_info) = engine
+        .resolve_content_with_info(&content)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Parse nodes
     let nodes = parser::parse_subscription_content(&raw).map_err(|e| e.to_string())?;
 
     // Filter
-    let nodes = filter::filter_nodes(
-        nodes,
-        include_regex.as_deref(),
-        exclude_regex.as_deref(),
-    ).map_err(|e| e.to_string())?;
+    let nodes = filter::filter_nodes(nodes, include_regex.as_deref(), exclude_regex.as_deref())
+        .map_err(|e| e.to_string())?;
 
     // Deduplicate
     let nodes = filter::deduplicate_nodes(nodes);
 
     Ok(ParseNodesResult {
-        nodes: nodes.iter().map(|n| NodePreviewItem {
-            name: n.name().to_string(),
-            protocol: n.protocol_type().to_string(),
-            server: n.server().to_string(),
-            port: n.port(),
-        }).collect(),
+        nodes: nodes
+            .iter()
+            .map(|n| NodePreviewItem {
+                name: n.name().to_string(),
+                protocol: n.protocol_type().to_string(),
+                server: n.server().to_string(),
+                port: n.port(),
+            })
+            .collect(),
         subscription_info,
     })
 }
@@ -105,8 +126,8 @@ fn validate_regex(pattern: String) -> Result<bool, String> {
 /// Fetch remote content (for testing URLs)
 #[tauri::command]
 async fn fetch_url(url: String, timeout_secs: Option<u64>) -> Result<String, String> {
-    let client = http_client::HttpClient::new(timeout_secs.unwrap_or(30))
-        .map_err(|e| e.to_string())?;
+    let client =
+        http_client::HttpClient::new(timeout_secs.unwrap_or(30)).map_err(|e| e.to_string())?;
 
     client.fetch(&url).await.map_err(|e| e.to_string())
 }

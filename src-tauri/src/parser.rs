@@ -1,11 +1,14 @@
-﻿//! Universal node parser supporting multiple proxy protocols
+//! Universal node parser supporting multiple proxy protocols
 //! Parses VLESS, VMess, Shadowsocks, ShadowsocksR, Trojan, Hysteria2, TUIC URLs
 
-use base64::{engine::general_purpose::{STANDARD, URL_SAFE, URL_SAFE_NO_PAD}, Engine as _};
+use base64::{
+    engine::general_purpose::{STANDARD, URL_SAFE, URL_SAFE_NO_PAD},
+    Engine as _,
+};
 use indexmap::IndexMap;
-use url::Url;
 use regex::Regex;
 use std::sync::OnceLock;
+use url::Url;
 
 use crate::error::{ConvertError, Result};
 use crate::node::*;
@@ -32,7 +35,7 @@ pub fn parse_subscription_content(content: &str) -> Result<Vec<Node>> {
     let mut nodes = Vec::new();
     let mut warnings = Vec::new();
 
-    for line in decoded.lines() {
+    for line in merge_wrapped_proxy_lines(&decoded) {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
@@ -65,12 +68,11 @@ pub fn parse_subscription_content(content: &str) -> Result<Vec<Node>> {
 
     // Only fail if we found no valid nodes at all
     if nodes.is_empty() && !warnings.is_empty() {
-        return Err(ConvertError::Internal(
-            format!("No valid proxy nodes found. {} link(s) failed to parse. First error: {}",
-                warnings.len(),
-                warnings.first().unwrap_or(&"Unknown error".to_string())
-            )
-        ));
+        return Err(ConvertError::Internal(format!(
+            "No valid proxy nodes found. {} link(s) failed to parse. First error: {}",
+            warnings.len(),
+            warnings.first().unwrap_or(&"Unknown error".to_string())
+        )));
     }
 
     Ok(nodes)
@@ -90,22 +92,76 @@ fn clean_subscription_input(content: &str) -> String {
 static START_PROXY_RE: OnceLock<Regex> = OnceLock::new();
 static PROXY_RE: OnceLock<Regex> = OnceLock::new();
 
+fn starts_with_known_scheme(line: &str) -> bool {
+    static LINE_START_RE: OnceLock<Regex> = OnceLock::new();
+    LINE_START_RE
+        .get_or_init(|| {
+            Regex::new(r"(?i)^(?:https?|vless|vmess|ssr|ss|trojan|hysteria2|hy2|hysteria|hy|tuic|wireguard|wg)://")
+                .expect("valid scheme regex")
+        })
+        .is_match(line)
+}
+
+fn merge_wrapped_proxy_lines(content: &str) -> Vec<String> {
+    let mut merged = Vec::new();
+    let mut current = String::new();
+
+    for raw_line in content.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            if !current.is_empty() {
+                merged.push(std::mem::take(&mut current));
+            }
+            continue;
+        }
+
+        if line.starts_with('#') {
+            if !current.is_empty() {
+                merged.push(std::mem::take(&mut current));
+            }
+            merged.push(line.to_string());
+            continue;
+        }
+
+        if starts_with_known_scheme(line) {
+            if !current.is_empty() {
+                merged.push(std::mem::take(&mut current));
+            }
+            current.push_str(line);
+        } else if !current.is_empty() {
+            current.push_str(line);
+        } else {
+            merged.push(line.to_string());
+        }
+    }
+
+    if !current.is_empty() {
+        merged.push(current);
+    }
+
+    merged
+}
+
 fn split_proxy_links(line: &str) -> Vec<String> {
     if !line.contains("://") {
         return vec![line.to_string()];
     }
 
     let start_re = START_PROXY_RE.get_or_init(|| {
-        Regex::new(r"(?i)^(?:vless|vmess|ssr|ss|trojan|hysteria2|hy2|hysteria|hy|tuic|wireguard|wg)://")
-            .expect("valid proxy scheme regex")
+        Regex::new(
+            r"(?i)^(?:vless|vmess|ssr|ss|trojan|hysteria2|hy2|hysteria|hy|tuic|wireguard|wg)://",
+        )
+        .expect("valid proxy scheme regex")
     });
     if !start_re.is_match(line) {
         return vec![line.to_string()];
     }
 
     let re = PROXY_RE.get_or_init(|| {
-        Regex::new(r"(?i)(?:vless|vmess|ssr|ss|trojan|hysteria2|hy2|hysteria|hy|tuic|wireguard|wg)://")
-            .expect("valid proxy scheme regex")
+        Regex::new(
+            r"(?i)(?:vless|vmess|ssr|ss|trojan|hysteria2|hy2|hysteria|hy|tuic|wireguard|wg)://",
+        )
+        .expect("valid proxy scheme regex")
     });
     let mut indices: Vec<usize> = re.find_iter(line).map(|m| m.start()).collect();
     if indices.len() <= 1 {
@@ -131,17 +187,18 @@ fn looks_like_base64(content: &str) -> bool {
     let content = content.replace(['\n', '\r', ' '], "");
     // Base64 content typically doesn't contain protocol prefixes
     // Support both standard (+/) and URL-safe (-_) base64
-    !content.contains("://") && content.chars().all(|c| {
-        c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '='
-            || c == '-' || c == '_'
-    })
+    !content.contains("://")
+        && content.chars().all(|c| {
+            c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=' || c == '-' || c == '_'
+        })
 }
 
 /// Decode base64 flexibly, trying STANDARD, URL_SAFE, and URL_SAFE_NO_PAD engines.
 /// SS links often use URL-safe base64 with or without padding.
 fn decode_base64_flexible(encoded: &str) -> Result<Vec<u8>> {
     let encoded = encoded.replace(['\n', '\r', ' '], "");
-    STANDARD.decode(&encoded)
+    STANDARD
+        .decode(&encoded)
         .or_else(|_| URL_SAFE.decode(&encoded))
         .or_else(|_| URL_SAFE_NO_PAD.decode(&encoded))
         .or_else(|_| {
@@ -151,7 +208,8 @@ fn decode_base64_flexible(encoded: &str) -> Result<Vec<u8>> {
                 3 => format!("{}=", encoded),
                 _ => encoded.clone(),
             };
-            STANDARD.decode(&padded)
+            STANDARD
+                .decode(&padded)
                 .or_else(|_| URL_SAFE.decode(&padded))
         })
         .map_err(|e| ConvertError::Base64DecodeError(e.to_string()))
@@ -159,30 +217,47 @@ fn decode_base64_flexible(encoded: &str) -> Result<Vec<u8>> {
 
 /// Parse a single proxy link
 pub fn parse_single_link(link: &str) -> Result<Node> {
-    let link = link.trim();
+    let link = normalize_proxy_link(link);
+    let scheme = link
+        .split("://")
+        .next()
+        .unwrap_or("unknown")
+        .to_ascii_lowercase();
 
-    if link.starts_with("vless://") {
-        parse_vless(link)
-    } else if link.starts_with("vmess://") {
-        parse_vmess(link)
-    } else if link.starts_with("ss://") {
-        parse_shadowsocks(link)
-    } else if link.starts_with("ssr://") {
-        parse_ssr(link)
-    } else if link.starts_with("trojan://") {
-        parse_trojan(link)
-    } else if link.starts_with("hysteria2://") || link.starts_with("hy2://") {
-        parse_hysteria2(link)
-    } else if link.starts_with("hysteria://") || link.starts_with("hy://") {
-        parse_hysteria(link)
-    } else if link.starts_with("tuic://") {
-        parse_tuic(link)
-    } else if link.starts_with("wireguard://") || link.starts_with("wg://") {
-        parse_wireguard(link)
+    match scheme.as_str() {
+        "vless" => parse_vless(&link),
+        "vmess" => parse_vmess(&link),
+        "ss" => parse_shadowsocks(&link),
+        "ssr" => parse_ssr(&link),
+        "trojan" => parse_trojan(&link),
+        "hysteria2" | "hy2" => parse_hysteria2(&link),
+        "hysteria" | "hy" => parse_hysteria(&link),
+        "tuic" => parse_tuic(&link),
+        "wireguard" | "wg" => parse_wireguard(&link),
+        _ => Err(ConvertError::UnsupportedProtocol(scheme)),
+    }
+}
+
+fn normalize_proxy_link(link: &str) -> String {
+    let trimmed = link.trim();
+    if !trimmed.chars().any(char::is_whitespace) {
+        return trimmed.to_string();
+    }
+
+    let mut parts = trimmed.splitn(2, '#');
+    let head = parts.next().unwrap_or_default();
+    let normalized_head: String = head.chars().filter(|c| !c.is_whitespace()).collect();
+
+    if let Some(fragment) = parts.next() {
+        let fragment = fragment.trim();
+        if fragment.is_empty() {
+            normalized_head
+        } else {
+            let normalized_fragment = fragment.split_whitespace().collect::<Vec<_>>().join("%20");
+            format!("{}#{}", normalized_head, normalized_fragment)
+        }
     } else {
-        Err(ConvertError::UnsupportedProtocol(
-            link.split("://").next().unwrap_or("unknown").to_string()
-        ))
+        normalized_head
     }
 }
 
@@ -201,7 +276,8 @@ fn parse_vless(link: &str) -> Result<Node> {
         });
     }
 
-    let server = url.host_str()
+    let server = url
+        .host_str()
         .ok_or_else(|| ConvertError::MissingField {
             field: "server".into(),
             context: "VLESS URL".into(),
@@ -211,59 +287,80 @@ fn parse_vless(link: &str) -> Result<Node> {
     let port = url.port().unwrap_or(443);
     let name = url_decode(url.fragment().unwrap_or(&server));
 
-    // Parse query parameters
-    let params: IndexMap<String, String> = url.query_pairs()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
-        .collect();
+    // Parse query parameters (case-insensitive keys, keep first value)
+    // Some providers append duplicate params; keeping the first avoids trailing noise overriding core fields.
+    let mut params: IndexMap<String, String> = IndexMap::new();
+    let mut sid_candidates = Vec::new();
+    for (k, v) in url.query_pairs() {
+        let key = k.to_string().to_ascii_lowercase();
+        let value = v.to_string();
+        if matches!(key.as_str(), "sid" | "short-id" | "shortid") {
+            sid_candidates.push(value.clone());
+        }
+        match params.get_mut(&key) {
+            Some(existing) if existing.is_empty() && !value.is_empty() => {
+                *existing = value;
+            }
+            None => {
+                params.insert(key, value);
+            }
+            _ => {}
+        }
+    }
 
-    // Helper to get non-empty string parameter
-    let get_param = |key: &str| -> Option<String> {
-        params.get(key).filter(|v| !v.is_empty()).cloned()
-    };
+    let network = get_param_from_indexmap(&params, "type")
+        .map(|v| v.to_ascii_lowercase())
+        .unwrap_or_else(|| "tcp".to_string());
+    let security = get_param_from_indexmap(&params, "security")
+        .map(|v| v.to_ascii_lowercase())
+        .unwrap_or_else(|| "none".to_string());
+    let reality_short_id = pick_preferred_short_id(sid_candidates);
 
-    let network = get_param("type").unwrap_or_else(|| "tcp".to_string());
-    let security = get_param("security").unwrap_or_else(|| "none".to_string());
-
-    // Parse alpn - filter out empty strings
-    let alpn = get_param("alpn").and_then(|v| {
-        let list: Vec<String> = v.split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-        if list.is_empty() { None } else { Some(list) }
-    });
+    let alpn = parse_alpn_param(get_param_from_indexmap(&params, "alpn"));
 
     let mut node = VlessNode {
         name,
         server,
         port,
         uuid,
-        flow: get_param("flow"),
+        flow: get_param_from_indexmap(&params, "flow"),
         network: network.clone(),
         tls: Some(security == "tls" || security == "reality"),
-        servername: get_param("sni"),
-        skip_cert_verify: params.get("allowInsecure").map(|v| v == "1" || v == "true"),
+        servername: get_param_from_indexmap(&params, "sni"),
+        skip_cert_verify: params
+            .get("allowinsecure")
+            .map(|v| v.eq_ignore_ascii_case("1") || v.eq_ignore_ascii_case("true")),
         // fp param = uTLS client fingerprint, NOT certificate fingerprint
-        client_fingerprint: get_param("fp"),
+        client_fingerprint: get_param_from_indexmap(&params, "fp")
+            .or_else(|| get_param_from_indexmap(&params, "fingerprint")),
         alpn,
         reality_opts: None,
         ws_opts: None,
         grpc_opts: None,
         h2_opts: None,
-        packet_encoding: get_param("packetEncoding"),
+        packet_encoding: get_param_from_indexmap(&params, "packetencoding"),
     };
 
     // Reality options
     if security == "reality" {
-        if let Some(pbk) = params.get("pbk") {
+        if let Some(pbk) = get_param_from_indexmap(&params, "pbk")
+            .or_else(|| get_param_from_indexmap(&params, "public-key"))
+            .or_else(|| get_param_from_indexmap(&params, "public_key"))
+        {
             node.reality_opts = Some(RealityOpts {
-                public_key: pbk.clone(),
-                short_id: params.get("sid").cloned(),
+                public_key: pbk,
+                short_id: reality_short_id,
             });
         }
         // For Reality, client-fingerprint is required and cannot be empty
         // Default to "chrome" if not specified
-        if node.client_fingerprint.is_none() || node.client_fingerprint.as_ref().map(|s| s.is_empty()).unwrap_or(false) {
+        if node.client_fingerprint.is_none()
+            || node
+                .client_fingerprint
+                .as_ref()
+                .map(|s| s.is_empty())
+                .unwrap_or(false)
+        {
             node.client_fingerprint = Some("chrome".to_string());
         }
     }
@@ -272,29 +369,38 @@ fn parse_vless(link: &str) -> Result<Node> {
     match network.as_str() {
         "ws" => {
             let mut headers = IndexMap::new();
-            if let Some(host) = get_param("host") {
+            if let Some(host) = get_param_from_indexmap(&params, "host") {
                 headers.insert("Host".to_string(), host);
             }
             node.ws_opts = Some(WsOpts {
-                path: get_param("path"),
-                headers: if headers.is_empty() { None } else { Some(headers) },
+                path: get_param_from_indexmap(&params, "path"),
+                headers: if headers.is_empty() {
+                    None
+                } else {
+                    Some(headers)
+                },
             });
         }
         "grpc" => {
             node.grpc_opts = Some(GrpcOpts {
-                grpc_service_name: get_param("serviceName"),
+                grpc_service_name: get_param_from_indexmap(&params, "servicename"),
             });
         }
         "h2" => {
-            let host = get_param("host").and_then(|v| {
-                let list: Vec<String> = v.split(',')
+            let host = get_param_from_indexmap(&params, "host").and_then(|v| {
+                let list: Vec<String> = v
+                    .split(',')
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty())
                     .collect();
-                if list.is_empty() { None } else { Some(list) }
+                if list.is_empty() {
+                    None
+                } else {
+                    Some(list)
+                }
             });
             node.h2_opts = Some(H2Opts {
-                path: get_param("path"),
+                path: get_param_from_indexmap(&params, "path"),
                 host,
             });
         }
@@ -310,7 +416,8 @@ fn parse_vless(link: &str) -> Result<Node> {
 
 fn parse_vmess(link: &str) -> Result<Node> {
     // VMess links are typically base64 encoded JSON after "vmess://"
-    let encoded = link.strip_prefix("vmess://")
+    let encoded = link
+        .strip_prefix("vmess://")
         .ok_or_else(|| ConvertError::InvalidNodeFormat {
             protocol: "vmess".into(),
             reason: "Missing vmess:// prefix".into(),
@@ -318,8 +425,8 @@ fn parse_vmess(link: &str) -> Result<Node> {
 
     let decoded = decode_base64_flexible(encoded.trim())?;
 
-    let json: serde_json::Value = serde_json::from_slice(&decoded)
-        .map_err(|e| ConvertError::InvalidNodeFormat {
+    let json: serde_json::Value =
+        serde_json::from_slice(&decoded).map_err(|e| ConvertError::InvalidNodeFormat {
             protocol: "vmess".into(),
             reason: format!("Invalid JSON: {}", e),
         })?;
@@ -355,19 +462,17 @@ fn parse_vmess(link: &str) -> Result<Node> {
         })
     };
 
-    let server = get_str("add")
-        .ok_or_else(|| ConvertError::MissingField {
-            field: "add (server)".into(),
-            context: "VMess config".into(),
-        })?;
+    let server = get_str("add").ok_or_else(|| ConvertError::MissingField {
+        field: "add (server)".into(),
+        context: "VMess config".into(),
+    })?;
 
     let port = get_u32("port").unwrap_or(443) as u16;
 
-    let uuid = get_str("id")
-        .ok_or_else(|| ConvertError::MissingField {
-            field: "id (uuid)".into(),
-            context: "VMess config".into(),
-        })?;
+    let uuid = get_str("id").ok_or_else(|| ConvertError::MissingField {
+        field: "id (uuid)".into(),
+        context: "VMess config".into(),
+    })?;
 
     let name = get_str("ps").unwrap_or_else(|| server.clone());
     let network = get_str("net").unwrap_or_else(|| "tcp".to_string());
@@ -388,15 +493,13 @@ fn parse_vmess(link: &str) -> Result<Node> {
 
     // servername: prefer "sni", fallback to "host" for WS connections
     // Handle empty strings as missing
-    let servername = get_str("sni")
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            if network == "ws" {
-                get_str("host").filter(|s| !s.is_empty())
-            } else {
-                None
-            }
-        });
+    let servername = get_str("sni").filter(|s| !s.is_empty()).or_else(|| {
+        if network == "ws" {
+            get_str("host").filter(|s| !s.is_empty())
+        } else {
+            None
+        }
+    });
 
     let mut node = VmessNode {
         name,
@@ -404,7 +507,9 @@ fn parse_vmess(link: &str) -> Result<Node> {
         port,
         uuid,
         alterId: get_u32("aid").unwrap_or(0),
-        cipher: get_str("scy").or_else(|| get_str("security")).unwrap_or_else(|| "auto".to_string()),
+        cipher: get_str("scy")
+            .or_else(|| get_str("security"))
+            .unwrap_or_else(|| "auto".to_string()),
         network: Some(network.clone()),
         tls,
         skip_cert_verify,
@@ -423,17 +528,24 @@ fn parse_vmess(link: &str) -> Result<Node> {
             }
             node.ws_opts = Some(WsOpts {
                 path: get_str("path"),
-                headers: if headers.is_empty() { None } else { Some(headers) },
+                headers: if headers.is_empty() {
+                    None
+                } else {
+                    Some(headers)
+                },
             });
         }
         "h2" => {
-            let host = get_str("host").map(|v| {
-                let list: Vec<String> = v.split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-                list
-            }).filter(|list| !list.is_empty());
+            let host = get_str("host")
+                .map(|v| {
+                    let list: Vec<String> = v
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    list
+                })
+                .filter(|list| !list.is_empty());
             node.h2_opts = Some(H2Opts {
                 path: get_str("path"),
                 host,
@@ -463,7 +575,8 @@ fn parse_shadowsocks(link: &str) -> Result<Node> {
     // 1. SIP002: ss://BASE64(method:password)@host:port/?plugin=...#name
     // 2. Legacy: ss://BASE64(method:password@host:port)#name
 
-    let link = link.strip_prefix("ss://")
+    let link = link
+        .strip_prefix("ss://")
         .ok_or_else(|| ConvertError::InvalidNodeFormat {
             protocol: "ss".into(),
             reason: "Missing ss:// prefix".into(),
@@ -497,11 +610,13 @@ fn parse_shadowsocks(link: &str) -> Result<Node> {
         let decoded = decode_base64_flexible(encoded)?;
         let decoded_str = String::from_utf8_lossy(&decoded);
 
-        let (cipher, password) = decoded_str.split_once(':')
-            .ok_or_else(|| ConvertError::InvalidNodeFormat {
-                protocol: "ss".into(),
-                reason: "Invalid method:password format".into(),
-            })?;
+        let (cipher, password) =
+            decoded_str
+                .split_once(':')
+                .ok_or_else(|| ConvertError::InvalidNodeFormat {
+                    protocol: "ss".into(),
+                    reason: "Invalid method:password format".into(),
+                })?;
 
         // Validate cipher
         if !is_valid_ss_cipher(cipher) {
@@ -514,7 +629,11 @@ fn parse_shadowsocks(link: &str) -> Result<Node> {
         // Parse server:port
         let (server, port) = parse_host_port(server_port)?;
 
-        let name = if name.is_empty() { server.clone() } else { name };
+        let name = if name.is_empty() {
+            server.clone()
+        } else {
+            name
+        };
 
         return Ok(Node::Shadowsocks(ShadowsocksNode {
             name,
@@ -533,17 +652,21 @@ fn parse_shadowsocks(link: &str) -> Result<Node> {
     let decoded_str = String::from_utf8_lossy(&decoded);
 
     // Parse method:password@host:port
-    let (method_pass, server_port) = decoded_str.rsplit_once('@')
-        .ok_or_else(|| ConvertError::InvalidNodeFormat {
-            protocol: "ss".into(),
-            reason: "Missing @ separator".into(),
-        })?;
+    let (method_pass, server_port) =
+        decoded_str
+            .rsplit_once('@')
+            .ok_or_else(|| ConvertError::InvalidNodeFormat {
+                protocol: "ss".into(),
+                reason: "Missing @ separator".into(),
+            })?;
 
-    let (cipher, password) = method_pass.split_once(':')
-        .ok_or_else(|| ConvertError::InvalidNodeFormat {
-            protocol: "ss".into(),
-            reason: "Invalid method:password format".into(),
-        })?;
+    let (cipher, password) =
+        method_pass
+            .split_once(':')
+            .ok_or_else(|| ConvertError::InvalidNodeFormat {
+                protocol: "ss".into(),
+                reason: "Invalid method:password format".into(),
+            })?;
 
     // Validate cipher
     if !is_valid_ss_cipher(cipher) {
@@ -554,7 +677,11 @@ fn parse_shadowsocks(link: &str) -> Result<Node> {
     }
 
     let (server, port) = parse_host_port(server_port)?;
-    let name = if name.is_empty() { server.clone() } else { name };
+    let name = if name.is_empty() {
+        server.clone()
+    } else {
+        name
+    };
 
     Ok(Node::Shadowsocks(ShadowsocksNode {
         name,
@@ -578,15 +705,14 @@ fn parse_ss_plugin(query: Option<&str>) -> (Option<String>, Option<IndexMap<Stri
     };
 
     // Find plugin parameter
-    let plugin_value = query.split('&')
-        .find_map(|pair| {
-            let (key, value) = pair.split_once('=')?;
-            if key == "plugin" {
-                Some(url_decode(value))
-            } else {
-                None
-            }
-        });
+    let plugin_value = query.split('&').find_map(|pair| {
+        let (key, value) = pair.split_once('=')?;
+        if key == "plugin" {
+            Some(url_decode(value))
+        } else {
+            None
+        }
+    });
 
     let plugin_str = match plugin_value {
         Some(p) => p,
@@ -638,8 +764,12 @@ fn parse_ss_plugin(query: Option<&str>) -> (Option<String>, Option<IndexMap<Stri
                 clash_opts.insert("path".to_string(), path.clone());
             }
             // tls should be stored as "true" string, will be converted to bool in to_clash_map
-            if opts.get("tls").map(|v| v == "true" || v == "1" || v.is_empty()).unwrap_or(false)
-                || plugin_str.contains(";tls")  // handle ";tls" without value
+            if opts
+                .get("tls")
+                .map(|v| v == "true" || v == "1" || v.is_empty())
+                .unwrap_or(false)
+                || plugin_str.contains(";tls")
+            // handle ";tls" without value
             {
                 clash_opts.insert("tls".to_string(), "true".to_string());
             }
@@ -672,7 +802,8 @@ fn parse_ssr(link: &str) -> Result<Node> {
     // SSR format: ssr://BASE64(server:port:protocol:method:obfs:BASE64(password)/?params)
     // URL-safe base64 with optional padding
     // Note: Some SSR links have params OUTSIDE base64: ssr://BASE64.../?remarks=BASE64
-    let content = link.strip_prefix("ssr://")
+    let content = link
+        .strip_prefix("ssr://")
         .ok_or_else(|| ConvertError::InvalidNodeFormat {
             protocol: "ssr".into(),
             reason: "Missing ssr:// prefix".into(),
@@ -685,7 +816,10 @@ fn parse_ssr(link: &str) -> Result<Node> {
         // Only split if '?' appears after what looks like base64
         // Base64 URL-safe chars: A-Z a-z 0-9 - _ =
         let before = &content[..idx];
-        if before.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '=') {
+        if before
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '=')
+        {
             (&content[..idx], Some(&content[idx + 1..]))
         } else {
             (content, None)
@@ -768,7 +902,8 @@ fn parse_ssr(link: &str) -> Result<Node> {
         }
     };
 
-    let port: u16 = rest_parts.first()
+    let port: u16 = rest_parts
+        .first()
         .and_then(|s| s.parse().ok())
         .ok_or_else(|| ConvertError::InvalidNodeFormat {
             protocol: "ssr".into(),
@@ -846,7 +981,8 @@ fn parse_trojan(link: &str) -> Result<Node> {
         });
     }
 
-    let server = url.host_str()
+    let server = url
+        .host_str()
         .ok_or_else(|| ConvertError::MissingField {
             field: "server".into(),
             context: "Trojan URL".into(),
@@ -856,38 +992,29 @@ fn parse_trojan(link: &str) -> Result<Node> {
     let port = url.port().unwrap_or(443);
     let name = url_decode(url.fragment().unwrap_or(&server));
 
-    let params: IndexMap<String, String> = url.query_pairs()
+    let params: IndexMap<String, String> = url
+        .query_pairs()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
 
-    // Helper to get non-empty string parameter
-    let get_param = |key: &str| -> Option<String> {
-        params.get(key).filter(|v| !v.is_empty()).cloned()
-    };
-
-    let network = get_param("type");
+    let network = get_param_from_indexmap(&params, "type");
 
     // Parse alpn - filter out empty strings
-    let alpn = get_param("alpn").and_then(|v| {
-        let list: Vec<String> = v.split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-        if list.is_empty() { None } else { Some(list) }
-    });
+    let alpn = parse_alpn_param(get_param_from_indexmap(&params, "alpn"));
 
     let mut node = TrojanNode {
         name,
         server,
         port,
         password: url_decode(&password),
-        sni: get_param("sni"),
+        sni: get_param_from_indexmap(&params, "sni"),
         skip_cert_verify: params.get("allowInsecure").map(|v| v == "1" || v == "true"),
         alpn,
         network: network.clone(),
         ws_opts: None,
         grpc_opts: None,
-        client_fingerprint: get_param("fp"),
+        client_fingerprint: get_param_from_indexmap(&params, "fp")
+            .or_else(|| get_param_from_indexmap(&params, "fingerprint")),
     };
 
     // Network-specific options
@@ -895,17 +1022,21 @@ fn parse_trojan(link: &str) -> Result<Node> {
         match net.as_str() {
             "ws" => {
                 let mut headers = IndexMap::new();
-                if let Some(host) = get_param("host") {
+                if let Some(host) = get_param_from_indexmap(&params, "host") {
                     headers.insert("Host".to_string(), host);
                 }
                 node.ws_opts = Some(WsOpts {
-                    path: get_param("path"),
-                    headers: if headers.is_empty() { None } else { Some(headers) },
+                    path: get_param_from_indexmap(&params, "path"),
+                    headers: if headers.is_empty() {
+                        None
+                    } else {
+                        Some(headers)
+                    },
                 });
             }
             "grpc" => {
                 node.grpc_opts = Some(GrpcOpts {
-                    grpc_service_name: get_param("serviceName"),
+                    grpc_service_name: get_param_from_indexmap(&params, "serviceName"),
                 });
             }
             _ => {}
@@ -934,36 +1065,49 @@ fn parse_hysteria(link: &str) -> Result<Node> {
 
     let url = url::Url::parse(&link).map_err(|e| ConvertError::UrlParseError(e.to_string()))?;
 
-    let server = url.host_str()
+    let server = url
+        .host_str()
         .ok_or_else(|| ConvertError::InvalidNodeFormat {
             protocol: "hysteria".into(),
             reason: "Missing server".into(),
-        })?.to_string();
+        })?
+        .to_string();
 
-    let port = url.port()
-        .ok_or_else(|| ConvertError::InvalidNodeFormat {
-            protocol: "hysteria".into(),
-            reason: "Missing port".into(),
-        })?;
+    let port = url.port().ok_or_else(|| ConvertError::InvalidNodeFormat {
+        protocol: "hysteria".into(),
+        reason: "Missing port".into(),
+    })?;
 
     let name = urlencoding::decode(url.fragment().unwrap_or(""))
         .unwrap_or_default()
         .to_string();
-    let name = if name.is_empty() { format!("{}:{}", server, port) } else { name };
+    let name = if name.is_empty() {
+        format!("{}:{}", server, port)
+    } else {
+        name
+    };
 
     let params: std::collections::HashMap<_, _> = url.query_pairs().collect();
 
     let get_param = |key: &str| -> Option<String> {
-        params.get(key).map(|v| v.to_string()).filter(|v| !v.is_empty())
+        params
+            .get(key)
+            .map(|v| v.to_string())
+            .filter(|v| !v.is_empty())
     };
 
     let auth_str = get_param("auth");
     let protocol = get_param("protocol");
     let obfs = get_param("obfs").or_else(|| get_param("obfsParam"));
     let sni = get_param("peer").or_else(|| get_param("sni"));
-    let alpn = get_param("alpn").map(|a| {
-        a.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect::<Vec<_>>()
-    }).filter(|v| !v.is_empty());
+    let alpn = get_param("alpn")
+        .map(|a| {
+            a.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .filter(|v| !v.is_empty());
     let skip_cert_verify = get_param("insecure").map(|v| v == "1" || v == "true");
     let fingerprint = get_param("pinSHA256");
 
@@ -1008,7 +1152,8 @@ fn parse_hysteria2(link: &str) -> Result<Node> {
         });
     }
 
-    let server = url.host_str()
+    let server = url
+        .host_str()
         .ok_or_else(|| ConvertError::MissingField {
             field: "server".into(),
             context: "Hysteria2 URL".into(),
@@ -1018,38 +1163,28 @@ fn parse_hysteria2(link: &str) -> Result<Node> {
     let port = url.port().unwrap_or(443);
     let name = url_decode(url.fragment().unwrap_or(&server));
 
-    let params: IndexMap<String, String> = url.query_pairs()
+    let params: IndexMap<String, String> = url
+        .query_pairs()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
 
-    // Helper to get non-empty string parameter
-    let get_param = |key: &str| -> Option<String> {
-        params.get(key).filter(|v| !v.is_empty()).cloned()
-    };
-
     // Parse alpn - filter out empty strings
-    let alpn = get_param("alpn").and_then(|v| {
-        let list: Vec<String> = v.split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-        if list.is_empty() { None } else { Some(list) }
-    });
+    let alpn = parse_alpn_param(get_param_from_indexmap(&params, "alpn"));
 
     Ok(Node::Hysteria2(Hysteria2Node {
         name,
         server,
         port,
         password: url_decode(&password),
-        ports: get_param("mport"),
-        obfs: get_param("obfs"),
-        obfs_password: get_param("obfs-password"),
-        sni: get_param("sni"),
+        ports: get_param_from_indexmap(&params, "mport"),
+        obfs: get_param_from_indexmap(&params, "obfs"),
+        obfs_password: get_param_from_indexmap(&params, "obfs-password"),
+        sni: get_param_from_indexmap(&params, "sni"),
         skip_cert_verify: params.get("insecure").map(|v| v == "1" || v == "true"),
         alpn,
-        fingerprint: get_param("pinSHA256"),
-        up: get_param("up"),
-        down: get_param("down"),
+        fingerprint: get_param_from_indexmap(&params, "pinSHA256"),
+        up: get_param_from_indexmap(&params, "up"),
+        down: get_param_from_indexmap(&params, "down"),
     }))
 }
 
@@ -1060,7 +1195,8 @@ fn parse_hysteria2(link: &str) -> Result<Node> {
 fn parse_tuic(link: &str) -> Result<Node> {
     let url = Url::parse(link).map_err(|e| ConvertError::UrlParseError(e.to_string()))?;
 
-    let server = url.host_str()
+    let server = url
+        .host_str()
         .ok_or_else(|| ConvertError::MissingField {
             field: "server".into(),
             context: "TUIC URL".into(),
@@ -1070,32 +1206,27 @@ fn parse_tuic(link: &str) -> Result<Node> {
     let port = url.port().unwrap_or(443);
     let name = url_decode(url.fragment().unwrap_or(&server));
 
-    let params: IndexMap<String, String> = url.query_pairs()
+    let params: IndexMap<String, String> = url
+        .query_pairs()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
-
-    let get_param = |key: &str| -> Option<String> {
-        params.get(key).filter(|v| !v.is_empty()).cloned()
-    };
 
     // TUIC V5: tuic://uuid:password@server:port
     let uuid_str = url.username().to_string();
     let password_str = url.password().map(url_decode).unwrap_or_default();
 
     let (uuid, password, token) = if !uuid_str.is_empty() {
-        (Some(uuid_str), Some(password_str).filter(|s| !s.is_empty()), None)
+        (
+            Some(uuid_str),
+            Some(password_str).filter(|s| !s.is_empty()),
+            None,
+        )
     } else {
         // TUIC V4: might use token
-        (None, None, get_param("token"))
+        (None, None, get_param_from_indexmap(&params, "token"))
     };
 
-    let alpn = get_param("alpn").and_then(|v| {
-        let list: Vec<String> = v.split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-        if list.is_empty() { None } else { Some(list) }
-    });
+    let alpn = parse_alpn_param(get_param_from_indexmap(&params, "alpn"));
 
     Ok(Node::Tuic(TuicNode {
         name,
@@ -1104,15 +1235,18 @@ fn parse_tuic(link: &str) -> Result<Node> {
         token,
         uuid,
         password,
-        sni: get_param("sni"),
-        skip_cert_verify: params.get("allowInsecure")
+        sni: get_param_from_indexmap(&params, "sni"),
+        skip_cert_verify: params
+            .get("allowInsecure")
             .or(params.get("insecure"))
             .map(|v| v == "1" || v == "true"),
         alpn,
         disable_sni: params.get("disable_sni").map(|v| v == "1" || v == "true"),
         reduce_rtt: params.get("reduce_rtt").map(|v| v == "1" || v == "true"),
-        udp_relay_mode: get_param("udp_relay_mode").or_else(|| get_param("udp-relay-mode")),
-        congestion_controller: get_param("congestion_control").or_else(|| get_param("congestion-controller")),
+        udp_relay_mode: get_param_from_indexmap(&params, "udp_relay_mode")
+            .or_else(|| get_param_from_indexmap(&params, "udp-relay-mode")),
+        congestion_controller: get_param_from_indexmap(&params, "congestion_control")
+            .or_else(|| get_param_from_indexmap(&params, "congestion-controller")),
     }))
 }
 
@@ -1134,47 +1268,49 @@ fn parse_wireguard(link: &str) -> Result<Node> {
 
     let url = url::Url::parse(&link).map_err(|e| ConvertError::UrlParseError(e.to_string()))?;
 
-    let server = url.host_str()
+    let server = url
+        .host_str()
         .ok_or_else(|| ConvertError::InvalidNodeFormat {
             protocol: "wireguard".into(),
             reason: "Missing server".into(),
-        })?.to_string();
+        })?
+        .to_string();
 
     let port = url.port().unwrap_or(51820); // Default WireGuard port
 
     let name = urlencoding::decode(url.fragment().unwrap_or(""))
         .unwrap_or_default()
         .to_string();
-    let name = if name.is_empty() { format!("WG-{}:{}", server, port) } else { name };
+    let name = if name.is_empty() {
+        format!("WG-{}:{}", server, port)
+    } else {
+        name
+    };
 
     let params: std::collections::HashMap<_, _> = url.query_pairs().collect();
 
-    let get_param = |key: &str| -> Option<String> {
-        params.get(key).map(|v| v.to_string()).filter(|v| !v.is_empty())
-    };
-
     // Required: private key and public key
-    let private_key = get_param("pk")
-        .or_else(|| get_param("private_key"))
-        .or_else(|| get_param("privatekey"))
+    let private_key = get_param_from_map(&params, "pk")
+        .or_else(|| get_param_from_map(&params, "private_key"))
+        .or_else(|| get_param_from_map(&params, "privatekey"))
         .ok_or_else(|| ConvertError::InvalidNodeFormat {
             protocol: "wireguard".into(),
             reason: "Missing private key (pk)".into(),
         })?;
 
-    let public_key = get_param("peer_pk")
-        .or_else(|| get_param("peer_public_key"))
-        .or_else(|| get_param("publickey"))
-        .or_else(|| get_param("public_key"))
+    let public_key = get_param_from_map(&params, "peer_pk")
+        .or_else(|| get_param_from_map(&params, "peer_public_key"))
+        .or_else(|| get_param_from_map(&params, "publickey"))
+        .or_else(|| get_param_from_map(&params, "public_key"))
         .ok_or_else(|| ConvertError::InvalidNodeFormat {
             protocol: "wireguard".into(),
             reason: "Missing peer public key (peer_pk)".into(),
         })?;
 
     // Local address (IP assigned to client)
-    let local_address = get_param("local_address")
-        .or_else(|| get_param("address"))
-        .or_else(|| get_param("ip"));
+    let local_address = get_param_from_map(&params, "local_address")
+        .or_else(|| get_param_from_map(&params, "address"))
+        .or_else(|| get_param_from_map(&params, "ip"));
 
     // Split local_address into IPv4 and IPv6 if needed
     let (ip, ipv6) = if let Some(addr) = local_address {
@@ -1195,30 +1331,34 @@ fn parse_wireguard(link: &str) -> Result<Node> {
         (None, None)
     };
 
-    let pre_shared_key = get_param("pre_shared_key")
-        .or_else(|| get_param("psk"));
+    let pre_shared_key = get_param_from_map(&params, "pre_shared_key")
+        .or_else(|| get_param_from_map(&params, "psk"));
 
     // Reserved bytes (e.g., "0,0,0" or "209,98,59")
-    let reserved = get_param("reserved").map(|s| {
-        s.split(',')
-            .filter_map(|v| v.trim().parse::<u16>().ok())
-            .collect::<Vec<_>>()
-    }).filter(|v| !v.is_empty());
+    let reserved = get_param_from_map(&params, "reserved")
+        .map(|s| {
+            s.split(',')
+                .filter_map(|v| v.trim().parse::<u8>().ok())
+                .collect::<Vec<_>>()
+        })
+        .filter(|v| !v.is_empty());
 
-    let mtu = get_param("mtu").and_then(|v| v.parse::<u32>().ok());
+    let mtu = get_param_from_map(&params, "mtu").and_then(|v| v.parse::<u32>().ok());
 
     // DNS servers
-    let dns = get_param("dns").map(|s| {
-        s.split(',')
-            .map(|v| v.trim().to_string())
-            .filter(|v| !v.is_empty())
-            .collect::<Vec<_>>()
-    }).filter(|v| !v.is_empty());
+    let dns = get_param_from_map(&params, "dns")
+        .map(|s| {
+            s.split(',')
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .filter(|v| !v.is_empty());
 
     // Allowed IPs (traffic selectors)
-    let allowed_ips = get_param("allowed-ips")
-        .or_else(|| get_param("allowed_ips"))
-        .or_else(|| get_param("allowedips"))
+    let allowed_ips = get_param_from_map(&params, "allowed-ips")
+        .or_else(|| get_param_from_map(&params, "allowed_ips"))
+        .or_else(|| get_param_from_map(&params, "allowedips"))
         .map(|s| {
             s.split(',')
                 .map(|v| v.trim().to_string())
@@ -1247,6 +1387,73 @@ fn parse_wireguard(link: &str) -> Result<Node> {
 // Helper Functions
 // ============================================================================
 
+/// Helper to get non-empty string parameter from query params
+fn get_param_from_map<K, V>(params: &std::collections::HashMap<K, V>, key: &str) -> Option<String>
+where
+    K: std::borrow::Borrow<str> + std::hash::Hash + Eq,
+    V: ToString,
+{
+    params
+        .get(key)
+        .map(|v| v.to_string())
+        .filter(|v| !v.is_empty())
+}
+
+/// Helper to get non-empty string parameter from IndexMap
+fn get_param_from_indexmap(params: &IndexMap<String, String>, key: &str) -> Option<String> {
+    params.get(key).filter(|v| !v.is_empty()).cloned()
+}
+
+/// Parse alpn parameter into a vector of strings
+fn parse_alpn_param(alpn_value: Option<String>) -> Option<Vec<String>> {
+    alpn_value.and_then(|v| {
+        let list: Vec<String> = v
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if list.is_empty() {
+            None
+        } else {
+            Some(list)
+        }
+    })
+}
+
+fn normalize_reality_short_id(raw: &str) -> Option<String> {
+    let normalized = raw.trim().trim_start_matches("0x").to_ascii_lowercase();
+    if normalized.is_empty() {
+        return None;
+    }
+    if normalized.len() > 16 || !normalized.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    Some(normalized)
+}
+
+fn pick_preferred_short_id<I>(values: I) -> Option<String>
+where
+    I: IntoIterator,
+    I::Item: AsRef<str>,
+{
+    let mut best: Option<String> = None;
+    for value in values {
+        let Some(candidate) = normalize_reality_short_id(value.as_ref()) else {
+            continue;
+        };
+
+        let replace = match &best {
+            None => true,
+            Some(current) => candidate.len() > current.len(),
+        };
+
+        if replace {
+            best = Some(candidate);
+        }
+    }
+    best
+}
+
 fn url_decode(s: &str) -> String {
     urlencoding::decode(s)
         .map(|s| s.into_owned())
@@ -1259,23 +1466,26 @@ fn parse_host_port(s: &str) -> Result<(String, u16)> {
         if let Some(bracket_idx) = s.find(']') {
             let host = &s[1..bracket_idx];
             let port_str = &s[bracket_idx + 1..];
-            let port: u16 = port_str.trim_start_matches(':').parse()
-                .map_err(|_| ConvertError::InvalidNodeFormat {
+            let port: u16 = port_str.trim_start_matches(':').parse().map_err(|_| {
+                ConvertError::InvalidNodeFormat {
                     protocol: "ss".into(),
                     reason: format!("Invalid port: {}", port_str),
-                })?;
+                }
+            })?;
             return Ok((host.to_string(), port));
         }
     }
 
     // Handle regular host:port
-    let (host, port_str) = s.rsplit_once(':')
+    let (host, port_str) = s
+        .rsplit_once(':')
         .ok_or_else(|| ConvertError::InvalidNodeFormat {
             protocol: "ss".into(),
             reason: "Missing port".into(),
         })?;
 
-    let port: u16 = port_str.parse()
+    let port: u16 = port_str
+        .parse()
         .map_err(|_| ConvertError::InvalidNodeFormat {
             protocol: "ss".into(),
             reason: format!("Invalid port: {}", port_str),
@@ -1283,5 +1493,3 @@ fn parse_host_port(s: &str) -> Result<(String, u16)> {
 
     Ok((host.to_string(), port))
 }
-
-

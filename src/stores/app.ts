@@ -16,8 +16,8 @@ export const useAppStore = defineStore('app', {
     enableUdp: true,
     enableTfo: false,
     skipCertVerify: false,
-    apiListenLan: true,
-    apiSecret: '',
+    vlessRealityShortIdOverride: '',
+    apiListenLan: false,
     ruleProviderProxy: '',
     ruleProviderHeader: '',
     ruleProviderSizeLimit: null,
@@ -78,8 +78,8 @@ export const useAppStore = defineStore('app', {
           enable_udp: this.enableUdp,
           enable_tfo: this.enableTfo,
           skip_cert_verify: this.skipCertVerify,
+          vless_reality_short_id_override: this.vlessRealityShortIdOverride || undefined,
           api_listen_lan: this.apiListenLan,
-          api_secret: this.apiSecret || undefined,
           rule_provider_proxy: this.ruleProviderProxy || undefined,
           rule_provider_header: this.ruleProviderHeader || undefined,
           rule_provider_size_limit: this.ruleProviderSizeLimit ?? undefined,
@@ -122,6 +122,8 @@ export const useAppStore = defineStore('app', {
           content: this.subscription,
           include_regex: this.includeRegex || null,
           exclude_regex: this.excludeRegex || null,
+          custom_user_agent: this.customUserAgent || undefined,
+          timeout_secs: 30,
         });
         this.previewNodes = result.nodes;
         this.previewSubscriptionInfo = result.subscription_info || null;
@@ -150,8 +152,8 @@ export const useAppStore = defineStore('app', {
       this.enableUdp = true;
       this.enableTfo = false;
       this.skipCertVerify = false;
-      this.apiListenLan = true;
-      this.apiSecret = '';
+      this.vlessRealityShortIdOverride = '';
+      this.apiListenLan = false;
       this.ruleProviderProxy = '';
       this.ruleProviderHeader = '';
       this.ruleProviderSizeLimit = null;
@@ -161,6 +163,8 @@ export const useAppStore = defineStore('app', {
       this.previewNodes = [];
       this.previewSubscriptionInfo = null;
       this.error = null;
+      this.loading = false;
+      this.previewing = false;
     },
   },
 });

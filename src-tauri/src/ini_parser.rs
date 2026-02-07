@@ -4,6 +4,7 @@
 use indexmap::IndexMap;
 use ini::Ini;
 use regex::Regex;
+use std::collections::HashSet;
 
 use crate::error::{ConvertError, Result};
 use crate::node::Node;
@@ -52,9 +53,8 @@ pub struct ParsedIniConfig {
 
 /// Parse ACL4SSR INI configuration
 pub fn parse_ini_config(content: &str) -> Result<ParsedIniConfig> {
-    let ini = Ini::load_from_str(content).map_err(|e| {
-        ConvertError::IniParseError(e.to_string())
-    })?;
+    let ini =
+        Ini::load_from_str(content).map_err(|e| ConvertError::IniParseError(e.to_string()))?;
 
     let mut proxy_groups = Vec::new();
     let mut rules = Vec::new();
@@ -147,7 +147,10 @@ fn parse_proxy_group_line(line: &str) -> Option<ParsedProxyGroup> {
     let mut tolerance = None;
 
     // For url-test, fallback, load-balance types, we need to parse from the end
-    let needs_url_test = matches!(group_type.as_str(), "url-test" | "fallback" | "load-balance");
+    let needs_url_test = matches!(
+        group_type.as_str(),
+        "url-test" | "fallback" | "load-balance"
+    );
 
     // Collect all parts after type
     let proxy_parts: Vec<&str> = parts.iter().skip(2).map(|s| s.trim()).collect();
@@ -277,10 +280,16 @@ fn parse_proxy_matcher(part: &str) -> ProxyMatcher {
 /// Check if a string looks like a regex pattern
 fn is_regex_pattern(s: &str) -> bool {
     // Common regex characters that indicate it's a pattern
-    s.contains('*') || s.contains('^') || s.contains('$')
-        || s.contains('(') || s.contains('[') || s.contains('|')
-        || s.contains('+') || s.contains('?') || s.contains('\\')
-        || s == ".*"
+    // Note: '+' and '?' alone are NOT checked because they appear in normal
+    // node names (e.g. "100+ Mbps", "C++ Node"). They only matter after
+    // a quantifiable token, which already requires '*', '(', '[', etc.
+    s.contains('*')
+        || s.contains('^')
+        || s.contains('$')
+        || s.contains('(')
+        || s.contains('[')
+        || s.contains('|')
+        || s.contains('\\')
 }
 
 /// Parse a ruleset line
@@ -380,6 +389,7 @@ pub fn resolve_proxy_group(
     _all_group_names: &[String],
 ) -> Vec<String> {
     let mut result = Vec::new();
+    let mut seen = HashSet::new();
 
     for matcher in &group.proxies {
         match matcher {
@@ -392,7 +402,8 @@ pub fn resolve_proxy_group(
                     for node in nodes {
                         if re.is_match(node.name()) {
                             let name = node.name().to_string();
-                            if !result.contains(&name) {
+                            if !seen.contains(&name) {
+                                seen.insert(name.clone());
                                 result.push(name);
                             }
                         }
@@ -405,7 +416,8 @@ pub fn resolve_proxy_group(
             ProxyMatcher::GroupRef(group_name) => {
                 // For Clash, keep group references as-is (don't expand)
                 // This allows proxy-groups to reference each other
-                if !result.contains(group_name) {
+                if !seen.contains(group_name) {
+                    seen.insert(group_name.clone());
                     result.push(group_name.clone());
                 }
             }
@@ -421,9 +433,7 @@ pub fn to_clash_proxy_groups(
     nodes: &[Node],
 ) -> Vec<IndexMap<String, serde_yaml::Value>> {
     // Collect all group names for reference validation
-    let all_group_names: Vec<String> = parsed_groups.iter()
-        .map(|g| g.name.clone())
-        .collect();
+    let all_group_names: Vec<String> = parsed_groups.iter().map(|g| g.name.clone()).collect();
 
     // Convert to Clash format
     let mut result = Vec::new();
@@ -431,25 +441,33 @@ pub fn to_clash_proxy_groups(
     for group in parsed_groups {
         let mut map: IndexMap<String, serde_yaml::Value> = IndexMap::new();
         map.insert("name".into(), serde_yaml::Value::String(group.name.clone()));
-        map.insert("type".into(), serde_yaml::Value::String(group.group_type.clone()));
+        map.insert(
+            "type".into(),
+            serde_yaml::Value::String(group.group_type.clone()),
+        );
 
         let proxies = resolve_proxy_group(group, nodes, &all_group_names);
-        let proxies_yaml: Vec<serde_yaml::Value> = proxies
-            .into_iter()
-            .map(serde_yaml::Value::String)
-            .collect();
+        let proxies_yaml: Vec<serde_yaml::Value> =
+            proxies.into_iter().map(serde_yaml::Value::String).collect();
         map.insert("proxies".into(), serde_yaml::Value::Sequence(proxies_yaml));
 
         // Add URL-test/fallback specific fields
-        if group.group_type == "url-test" || group.group_type == "fallback" || group.group_type == "load-balance" {
+        if group.group_type == "url-test"
+            || group.group_type == "fallback"
+            || group.group_type == "load-balance"
+        {
             if let Some(url) = &group.url {
                 map.insert("url".into(), serde_yaml::Value::String(url.clone()));
             } else {
-                map.insert("url".into(), serde_yaml::Value::String("http://www.gstatic.com/generate_204".into()));
+                map.insert(
+                    "url".into(),
+                    serde_yaml::Value::String("http://www.gstatic.com/generate_204".into()),
+                );
             }
-            map.insert("interval".into(), serde_yaml::Value::Number(
-                (group.interval.unwrap_or(300)).into()
-            ));
+            map.insert(
+                "interval".into(),
+                serde_yaml::Value::Number((group.interval.unwrap_or(300)).into()),
+            );
             // Add timeout if specified
             if let Some(timeout) = group.timeout {
                 map.insert("timeout".into(), serde_yaml::Value::Number(timeout.into()));
@@ -457,7 +475,10 @@ pub fn to_clash_proxy_groups(
             // Add tolerance (only for url-test)
             if group.group_type == "url-test" {
                 if let Some(tolerance) = group.tolerance {
-                    map.insert("tolerance".into(), serde_yaml::Value::Number(tolerance.into()));
+                    map.insert(
+                        "tolerance".into(),
+                        serde_yaml::Value::Number(tolerance.into()),
+                    );
                 }
             }
         }
@@ -476,7 +497,10 @@ pub fn to_clash_rules(parsed_rules: &[ParsedRule]) -> Vec<String> {
             if rule.rule_type == "MATCH" {
                 format!("MATCH,{}", rule.target)
             } else if rule.no_resolve {
-                format!("{},{},{},no-resolve", rule.rule_type, rule.value, rule.target)
+                format!(
+                    "{},{},{},no-resolve",
+                    rule.rule_type, rule.value, rule.target
+                )
             } else {
                 format!("{},{},{}", rule.rule_type, rule.value, rule.target)
             }

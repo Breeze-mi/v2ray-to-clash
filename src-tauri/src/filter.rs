@@ -1,9 +1,9 @@
 //! Node filtering, renaming, and deduplication using regex patterns
 
-use std::collections::HashSet;
-use regex::Regex;
 use crate::error::{ConvertError, Result};
 use crate::node::Node;
+use regex::Regex;
+use std::collections::HashSet;
 
 /// Filter nodes based on include/exclude regex patterns
 pub fn filter_nodes(
@@ -12,22 +12,22 @@ pub fn filter_nodes(
     exclude_pattern: Option<&str>,
 ) -> Result<Vec<Node>> {
     let include_re = match include_pattern {
-        Some(p) if !p.is_empty() => Some(
-            Regex::new(p).map_err(|e| ConvertError::InvalidRegex {
+        Some(p) if !p.is_empty() => {
+            Some(Regex::new(p).map_err(|e| ConvertError::InvalidRegex {
                 pattern: p.to_string(),
                 reason: e.to_string(),
-            })?
-        ),
+            })?)
+        }
         _ => None,
     };
 
     let exclude_re = match exclude_pattern {
-        Some(p) if !p.is_empty() => Some(
-            Regex::new(p).map_err(|e| ConvertError::InvalidRegex {
+        Some(p) if !p.is_empty() => {
+            Some(Regex::new(p).map_err(|e| ConvertError::InvalidRegex {
                 pattern: p.to_string(),
                 reason: e.to_string(),
-            })?
-        ),
+            })?)
+        }
         _ => None,
     };
 
@@ -82,10 +82,7 @@ pub fn rename_nodes(
 }
 
 /// Match nodes against a regex pattern (used for proxy group filtering)
-pub fn match_nodes_by_pattern<'a>(
-    nodes: &'a [Node],
-    pattern: &str,
-) -> Result<Vec<&'a Node>> {
+pub fn match_nodes_by_pattern<'a>(nodes: &'a [Node], pattern: &str) -> Result<Vec<&'a Node>> {
     let re = Regex::new(pattern).map_err(|e| ConvertError::InvalidRegex {
         pattern: pattern.to_string(),
         reason: e.to_string(),
@@ -98,7 +95,8 @@ pub fn match_nodes_by_pattern<'a>(
 /// Keeps the first occurrence of each unique node.
 pub fn deduplicate_nodes(nodes: Vec<Node>) -> Vec<Node> {
     let mut seen = HashSet::new();
-    nodes.into_iter()
+    nodes
+        .into_iter()
         .filter(|node| seen.insert(node.dedup_key()))
         .collect()
 }

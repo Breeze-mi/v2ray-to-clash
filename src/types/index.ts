@@ -14,6 +14,7 @@ export interface ConvertRequest {
   enable_udp?: boolean;
   enable_tfo?: boolean;
   skip_cert_verify?: boolean;
+  vless_reality_short_id_override?: string;
   api_listen_lan?: boolean;
   api_secret?: string;
   rule_provider_proxy?: string;
@@ -74,8 +75,8 @@ export interface AppState {
   enableUdp: boolean;
   enableTfo: boolean;
   skipCertVerify: boolean;
+  vlessRealityShortIdOverride: string;
   apiListenLan: boolean;
-  apiSecret: string;
   ruleProviderProxy: string;
   ruleProviderHeader: string;
   ruleProviderSizeLimit: number | null;

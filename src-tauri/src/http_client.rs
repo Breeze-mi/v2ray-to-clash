@@ -1,8 +1,8 @@
 //! HTTP client for fetching subscriptions and remote configs
 
-use std::time::Duration;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 use crate::error::{ConvertError, Result};
 
@@ -80,20 +80,16 @@ impl HttpClient {
 
     /// Fetch content from a URL, also returning subscription-userinfo if present
     pub async fn fetch_with_info(&self, url: &str) -> Result<FetchWithInfoResult> {
-        let response = self.client
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| {
-                if e.is_timeout() {
-                    ConvertError::Timeout(url.to_string())
-                } else {
-                    ConvertError::FetchError {
-                        url: url.to_string(),
-                        reason: e.to_string(),
-                    }
+        let response = self.client.get(url).send().await.map_err(|e| {
+            if e.is_timeout() {
+                ConvertError::Timeout(url.to_string())
+            } else {
+                ConvertError::FetchError {
+                    url: url.to_string(),
+                    reason: e.to_string(),
                 }
-            })?;
+            }
+        })?;
 
         if !response.status().is_success() {
             return Err(ConvertError::FetchError {
@@ -103,15 +99,19 @@ impl HttpClient {
         }
 
         // Extract subscription-userinfo header before consuming the response
-        let subscription_info = response.headers()
+        let subscription_info = response
+            .headers()
             .get("subscription-userinfo")
             .and_then(|v| v.to_str().ok())
             .map(SubscriptionInfo::parse);
 
-        let body = response.text().await.map_err(|e| ConvertError::FetchError {
-            url: url.to_string(),
-            reason: e.to_string(),
-        })?;
+        let body = response
+            .text()
+            .await
+            .map_err(|e| ConvertError::FetchError {
+                url: url.to_string(),
+                reason: e.to_string(),
+            })?;
 
         Ok(FetchWithInfoResult {
             body,

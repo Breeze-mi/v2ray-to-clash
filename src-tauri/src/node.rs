@@ -100,7 +100,11 @@ impl Node {
                         parts.push(format!("h2={}", key));
                     }
                 }
-                push_opt_str(&mut parts, "client-fingerprint", n.client_fingerprint.as_deref());
+                push_opt_str(
+                    &mut parts,
+                    "client-fingerprint",
+                    n.client_fingerprint.as_deref(),
+                );
                 push_opt_str(&mut parts, "packet-encoding", n.packet_encoding.as_deref());
                 parts.join("|")
             }
@@ -184,7 +188,11 @@ impl Node {
                         parts.push(format!("grpc={}", key));
                     }
                 }
-                push_opt_str(&mut parts, "client-fingerprint", n.client_fingerprint.as_deref());
+                push_opt_str(
+                    &mut parts,
+                    "client-fingerprint",
+                    n.client_fingerprint.as_deref(),
+                );
                 parts.join("|")
             }
             Node::Hysteria(n) => {
@@ -237,7 +245,11 @@ impl Node {
                 push_opt_bool(&mut parts, "disable-sni", n.disable_sni);
                 push_opt_bool(&mut parts, "reduce-rtt", n.reduce_rtt);
                 push_opt_str(&mut parts, "udp-relay-mode", n.udp_relay_mode.as_deref());
-                push_opt_str(&mut parts, "congestion-controller", n.congestion_controller.as_deref());
+                push_opt_str(
+                    &mut parts,
+                    "congestion-controller",
+                    n.congestion_controller.as_deref(),
+                );
                 parts.join("|")
             }
             Node::WireGuard(n) => {
@@ -252,7 +264,7 @@ impl Node {
                 push_opt_str(&mut parts, "ipv6", n.ipv6.as_deref());
                 push_opt_vec(&mut parts, "allowed-ips", &n.allowed_ips);
                 push_opt_str(&mut parts, "pre-shared-key", n.pre_shared_key.as_deref());
-                push_opt_vec_u16(&mut parts, "reserved", &n.reserved);
+                push_opt_vec_u8(&mut parts, "reserved", &n.reserved);
                 push_opt_u32(&mut parts, "mtu", n.mtu);
                 push_opt_vec(&mut parts, "dns", &n.dns);
                 parts.join("|")
@@ -341,10 +353,14 @@ fn push_opt_vec(parts: &mut Vec<String>, key: &str, value: &Option<Vec<String>>)
     }
 }
 
-fn push_opt_vec_u16(parts: &mut Vec<String>, key: &str, value: &Option<Vec<u16>>) {
+fn push_opt_vec_u8(parts: &mut Vec<String>, key: &str, value: &Option<Vec<u8>>) {
     if let Some(values) = value {
         if !values.is_empty() {
-            let joined = values.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(",");
+            let joined = values
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
             parts.push(format!("{key}={}", joined));
         }
     }
@@ -403,7 +419,6 @@ fn reality_key(reality: &RealityOpts) -> String {
     push_opt_str(&mut parts, "sid", reality.short_id.as_deref());
     parts.join(";")
 }
-
 
 // ============================================================================
 // VLESS Node
@@ -515,7 +530,13 @@ impl VlessNode {
         }
 
         // 10. Network-specific options (ws-opts, grpc-opts, h2-opts)
-        insert_transport_opts(&mut map, &self.network, &self.ws_opts, &self.grpc_opts, &self.h2_opts);
+        insert_transport_opts(
+            &mut map,
+            &self.network,
+            &self.ws_opts,
+            &self.grpc_opts,
+            &self.h2_opts,
+        );
 
         map
     }
@@ -559,7 +580,10 @@ impl VmessNode {
         map.insert("server".into(), v_str(&self.server));
         map.insert("port".into(), v_num(self.port));
         map.insert("uuid".into(), v_str(&self.uuid));
-        map.insert("alterId".into(), serde_yaml::Value::Number(self.alterId.into()));
+        map.insert(
+            "alterId".into(),
+            serde_yaml::Value::Number(self.alterId.into()),
+        );
         map.insert("cipher".into(), v_str(&self.cipher));
         map.insert("udp".into(), v_bool(true));
 
@@ -582,7 +606,13 @@ impl VmessNode {
         }
 
         let network = self.network.as_deref().unwrap_or("tcp");
-        insert_transport_opts(&mut map, network, &self.ws_opts, &self.grpc_opts, &self.h2_opts);
+        insert_transport_opts(
+            &mut map,
+            network,
+            &self.ws_opts,
+            &self.grpc_opts,
+            &self.h2_opts,
+        );
 
         map
     }
@@ -648,12 +678,12 @@ pub struct SsrNode {
     pub name: String,
     pub server: String,
     pub port: u16,
-    pub cipher: String,        // method (e.g., aes-256-cfb)
+    pub cipher: String, // method (e.g., aes-256-cfb)
     pub password: String,
-    pub protocol: String,      // e.g., "auth_aes128_sha1", "origin"
+    pub protocol: String, // e.g., "auth_aes128_sha1", "origin"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub protocol_param: Option<String>,
-    pub obfs: String,          // e.g., "tls1.2_ticket_auth", "plain"
+    pub obfs: String, // e.g., "tls1.2_ticket_auth", "plain"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub obfs_param: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1022,9 +1052,9 @@ pub struct WireGuardNode {
     /// Pre-shared key
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pre_shared_key: Option<String>,
-    /// Reserved bytes (e.g., for WARP)
+    /// Reserved bytes (e.g., for WARP) — 3 bytes, each 0–255
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub reserved: Option<Vec<u16>>,
+    pub reserved: Option<Vec<u8>>,
     /// MTU
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mtu: Option<u32>,
@@ -1063,7 +1093,8 @@ impl WireGuardNode {
         }
         if let Some(reserved) = &self.reserved {
             if !reserved.is_empty() {
-                let seq: Vec<serde_yaml::Value> = reserved.iter()
+                let seq: Vec<serde_yaml::Value> = reserved
+                    .iter()
                     .map(|v| serde_yaml::Value::Number((*v).into()))
                     .collect();
                 map.insert("reserved".into(), serde_yaml::Value::Sequence(seq));
@@ -1149,7 +1180,10 @@ fn v_num(n: u16) -> serde_yaml::Value {
 
 fn v_str_seq(items: &[String]) -> serde_yaml::Value {
     serde_yaml::Value::Sequence(
-        items.iter().map(|s| serde_yaml::Value::String(s.clone())).collect()
+        items
+            .iter()
+            .map(|s| serde_yaml::Value::String(s.clone()))
+            .collect(),
     )
 }
 
@@ -1216,6 +1250,8 @@ fn insert_transport_opts(
 /// Valid Shadowsocks ciphers supported by Clash/Mihomo
 #[allow(dead_code)]
 pub const SS_VALID_CIPHERS: &[&str] = &[
+    // No encryption (testing/debugging, supported by mihomo)
+    "none",
     // AEAD ciphers (recommended)
     "aes-128-gcm",
     "aes-192-gcm",

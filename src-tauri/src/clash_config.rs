@@ -4,8 +4,8 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
+use crate::ini_parser::{to_clash_proxy_groups, to_clash_rules, ParsedIniConfig};
 use crate::node::Node;
-use crate::ini_parser::{ParsedIniConfig, to_clash_proxy_groups, to_clash_rules};
 
 /// Complete Clash configuration (mihomo compatible)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,7 +42,10 @@ pub struct ClashConfig {
 
     /// Global client fingerprint for TLS (critical for Reality/VLESS)
     /// This sets default uTLS fingerprint for all proxies
-    #[serde(rename = "global-client-fingerprint", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "global-client-fingerprint",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub global_client_fingerprint: Option<String>,
 
     /// Process matching mode
@@ -50,7 +53,10 @@ pub struct ClashConfig {
     pub find_process_mode: Option<String>,
 
     /// External controller for API
-    #[serde(rename = "external-controller", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "external-controller",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub external_controller: Option<String>,
 
     /// External UI path
@@ -70,7 +76,10 @@ pub struct ClashConfig {
     pub geo_auto_update: Option<bool>,
 
     /// GeoIP/GeoSite update interval
-    #[serde(rename = "geo-update-interval", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "geo-update-interval",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub geo_update_interval: Option<u32>,
 
     /// Profile settings
@@ -168,7 +177,10 @@ pub struct SniffProtocols {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SniffProtocolConfig {
     pub ports: Vec<String>,
-    #[serde(rename = "override-destination", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "override-destination",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub override_destination: Option<bool>,
 }
 
@@ -189,6 +201,11 @@ pub struct DnsConfig {
     #[serde(rename = "default-nameserver")]
     pub default_nameserver: Vec<String>,
     pub nameserver: Vec<String>,
+    #[serde(
+        rename = "proxy-server-nameserver",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub proxy_server_nameserver: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fallback: Option<Vec<String>>,
     #[serde(rename = "fallback-filter", skip_serializing_if = "Option::is_none")]
@@ -289,18 +306,18 @@ impl Default for DnsConfig {
                 "+.msftconnecttest.com".to_string(),
                 "+.msftncsi.com".to_string(),
             ]),
-            default_nameserver: vec![
+            default_nameserver: vec!["223.5.5.5".to_string(), "119.29.29.29".to_string()],
+            nameserver: vec![
                 "223.5.5.5".to_string(),
                 "119.29.29.29".to_string(),
+                "1.1.1.1".to_string(),
+                "8.8.8.8".to_string(),
             ],
-            nameserver: vec![
-                "https://doh.pub/dns-query".to_string(),
-                "https://dns.alidns.com/dns-query".to_string(),
-            ],
-            fallback: Some(vec![
-                "https://1.1.1.1/dns-query".to_string(),
-                "https://dns.google/dns-query".to_string(),
+            proxy_server_nameserver: Some(vec![
+                "223.5.5.5".to_string(),
+                "119.29.29.29".to_string(),
             ]),
+            fallback: Some(vec!["1.1.1.1".to_string(), "8.8.8.8".to_string()]),
             fallback_filter: None,
             nameserver_policy: None,
         }
@@ -339,7 +356,12 @@ impl ClashConfigBuilder {
     }
 
     /// Set global options for all nodes (UDP, TFO, skip-cert-verify)
-    pub fn with_global_options(mut self, enable_udp: bool, enable_tfo: bool, skip_cert_verify: bool) -> Self {
+    pub fn with_global_options(
+        mut self,
+        enable_udp: bool,
+        enable_tfo: bool,
+        skip_cert_verify: bool,
+    ) -> Self {
         self.enable_udp = enable_udp;
         self.enable_tfo = enable_tfo;
         self.skip_cert_verify = skip_cert_verify;
@@ -354,7 +376,11 @@ impl ClashConfigBuilder {
     }
 
     /// Set API settings for external controller
-    pub fn with_api_settings(mut self, external_controller: String, secret: Option<String>) -> Self {
+    pub fn with_api_settings(
+        mut self,
+        external_controller: String,
+        secret: Option<String>,
+    ) -> Self {
         self.config.external_controller = Some(external_controller);
         self.config.secret = secret;
         self
@@ -380,9 +406,18 @@ impl ClashConfigBuilder {
                     map.insert("tfo".to_string(), serde_yaml::Value::Bool(true));
                 }
                 if self.skip_cert_verify {
-                    map.insert("skip-cert-verify".to_string(), serde_yaml::Value::Bool(true));
+                    map.insert(
+                        "skip-cert-verify".to_string(),
+                        serde_yaml::Value::Bool(true),
+                    );
                 }
-                serde_yaml::to_value(map).unwrap_or(serde_yaml::Value::Null)
+                match serde_yaml::to_value(map) {
+                    Ok(value) => value,
+                    Err(e) => {
+                        eprintln!("Warning: Failed to serialize node '{}': {}", n.name(), e);
+                        serde_yaml::Value::Null
+                    }
+                }
             })
             .collect();
         self
@@ -414,15 +449,7 @@ impl ClashConfigBuilder {
             } else if let Some(rest) = url.strip_prefix("clash-classic:") {
                 ("classical", rest.to_string())
             } else {
-                // Detect behavior from URL path heuristics
-                let b = if url.contains("Domain") || url.contains("domain") {
-                    "domain"
-                } else if url.contains("CIDR") || url.contains("cidr") || url.contains("/IP") {
-                    "ipcidr"
-                } else {
-                    "classical"
-                };
-                (b, url.clone())
+                ("classical", url.clone())
             };
 
             // Derive provider name from URL
@@ -478,7 +505,10 @@ impl ClashConfigBuilder {
 
         // Proxy group (select all nodes)
         let mut proxy_group: IndexMap<String, serde_yaml::Value> = IndexMap::new();
-        proxy_group.insert("name".into(), serde_yaml::Value::String("🔰 节点选择".into()));
+        proxy_group.insert(
+            "name".into(),
+            serde_yaml::Value::String("🔰 节点选择".into()),
+        );
         proxy_group.insert("type".into(), serde_yaml::Value::String("select".into()));
         let mut proxies: Vec<serde_yaml::Value> = vec![
             serde_yaml::Value::String("♻️ 自动选择".into()),
@@ -492,37 +522,62 @@ impl ClashConfigBuilder {
 
         // Auto group (url-test)
         let mut auto_group: IndexMap<String, serde_yaml::Value> = IndexMap::new();
-        auto_group.insert("name".into(), serde_yaml::Value::String("♻️ 自动选择".into()));
+        auto_group.insert(
+            "name".into(),
+            serde_yaml::Value::String("♻️ 自动选择".into()),
+        );
         auto_group.insert("type".into(), serde_yaml::Value::String("url-test".into()));
-        auto_group.insert("url".into(), serde_yaml::Value::String("http://www.gstatic.com/generate_204".into()));
+        auto_group.insert(
+            "url".into(),
+            serde_yaml::Value::String("http://www.gstatic.com/generate_204".into()),
+        );
         auto_group.insert("interval".into(), serde_yaml::Value::Number(300.into()));
-        auto_group.insert("proxies".into(), serde_yaml::Value::Sequence(
-            node_names.iter().map(|n| serde_yaml::Value::String(n.clone())).collect()
-        ));
+        auto_group.insert(
+            "proxies".into(),
+            serde_yaml::Value::Sequence(
+                node_names
+                    .iter()
+                    .map(|n| serde_yaml::Value::String(n.clone()))
+                    .collect(),
+            ),
+        );
         groups.push(serde_yaml::to_value(auto_group).unwrap_or(serde_yaml::Value::Null));
 
         // Direct group
         let mut direct_group: IndexMap<String, serde_yaml::Value> = IndexMap::new();
-        direct_group.insert("name".into(), serde_yaml::Value::String("🎯 全球直连".into()));
+        direct_group.insert(
+            "name".into(),
+            serde_yaml::Value::String("🎯 全球直连".into()),
+        );
         direct_group.insert("type".into(), serde_yaml::Value::String("select".into()));
-        direct_group.insert("proxies".into(), serde_yaml::Value::Sequence(vec![
-            serde_yaml::Value::String("DIRECT".into()),
-        ]));
+        direct_group.insert(
+            "proxies".into(),
+            serde_yaml::Value::Sequence(vec![serde_yaml::Value::String("DIRECT".into())]),
+        );
         groups.push(serde_yaml::to_value(direct_group).unwrap_or(serde_yaml::Value::Null));
 
         // Reject group
         let mut reject_group: IndexMap<String, serde_yaml::Value> = IndexMap::new();
-        reject_group.insert("name".into(), serde_yaml::Value::String("🛑 全球拦截".into()));
+        reject_group.insert(
+            "name".into(),
+            serde_yaml::Value::String("🛑 全球拦截".into()),
+        );
         reject_group.insert("type".into(), serde_yaml::Value::String("select".into()));
-        reject_group.insert("proxies".into(), serde_yaml::Value::Sequence(vec![
-            serde_yaml::Value::String("REJECT".into()),
-            serde_yaml::Value::String("DIRECT".into()),
-        ]));
+        reject_group.insert(
+            "proxies".into(),
+            serde_yaml::Value::Sequence(vec![
+                serde_yaml::Value::String("REJECT".into()),
+                serde_yaml::Value::String("DIRECT".into()),
+            ]),
+        );
         groups.push(serde_yaml::to_value(reject_group).unwrap_or(serde_yaml::Value::Null));
 
         // Fallback group
         let mut fish_group: IndexMap<String, serde_yaml::Value> = IndexMap::new();
-        fish_group.insert("name".into(), serde_yaml::Value::String("🐟 漏网之鱼".into()));
+        fish_group.insert(
+            "name".into(),
+            serde_yaml::Value::String("🐟 漏网之鱼".into()),
+        );
         fish_group.insert("type".into(), serde_yaml::Value::String("select".into()));
         let fish_proxies: Vec<serde_yaml::Value> = vec![
             serde_yaml::Value::String("🔰 节点选择".into()),
@@ -588,17 +643,24 @@ impl ClashConfigBuilder {
         output.push_str("# Clash Meta Configuration\n");
         output.push_str("# Generated by LocalSub\n\n");
 
-        // Basic settings - use port/socks-port for maximum compatibility
+        // Basic settings
         output.push_str("# 基础设置\n");
-        output.push_str(&format!("port: {}\n", config.mixed_port));
-        output.push_str(&format!("socks-port: {}\n", config.mixed_port + 1));
+        output.push_str(&format!("mixed-port: {}\n", config.mixed_port));
         output.push_str(&format!("allow-lan: {}\n", config.allow_lan));
         output.push_str(&format!("mode: {}\n", config.mode));
         output.push_str(&format!("log-level: {}\n", config.log_level));
         output.push_str(&format!("ipv6: {}\n", config.ipv6));
+        output.push_str(&format!("unified-delay: {}\n", config.unified_delay));
+        output.push_str(&format!("tcp-concurrent: {}\n", config.tcp_concurrent));
+        if let Some(fpm) = &config.find_process_mode {
+            output.push_str(&format!("find-process-mode: {}\n", fpm));
+        }
         if let Some(ec) = &config.external_controller {
             let v = serde_yaml::Value::String(ec.clone());
-            output.push_str(&format!("external-controller: {}\n", format_yaml_value_simple(&v)));
+            output.push_str(&format!(
+                "external-controller: {}\n",
+                format_yaml_value_simple(&v)
+            ));
         }
         if let Some(secret) = &config.secret {
             let v = serde_yaml::Value::String(secret.clone());
@@ -618,6 +680,153 @@ impl ClashConfigBuilder {
             output.push_str("  auto-route: true\n");
             output.push_str("  auto-redirect: true\n");
             output.push_str("  auto-detect-interface: true\n");
+            output.push('\n');
+        }
+
+        // Profile settings
+        if let Some(profile) = &config.profile {
+            output.push_str("# 缓存设置\n");
+            output.push_str("profile:\n");
+            output.push_str(&format!("  store-selected: {}\n", profile.store_selected));
+            output.push_str(&format!("  store-fake-ip: {}\n", profile.store_fake_ip));
+            output.push('\n');
+        }
+
+        // Sniffer settings
+        if let Some(sniffer) = &config.sniffer {
+            output.push_str("# 域名嗅探\n");
+            output.push_str("sniffer:\n");
+            output.push_str(&format!("  enable: {}\n", sniffer.enable));
+            output.push_str(&format!(
+                "  force-dns-mapping: {}\n",
+                sniffer.force_dns_mapping
+            ));
+            output.push_str(&format!("  parse-pure-ip: {}\n", sniffer.parse_pure_ip));
+            output.push_str(&format!(
+                "  override-destination: {}\n",
+                sniffer.override_destination
+            ));
+            output.push_str("  sniff:\n");
+            output.push_str("    HTTP:\n");
+            output.push_str(&format!(
+                "      ports: [{}]\n",
+                sniffer
+                    .sniff
+                    .http
+                    .ports
+                    .iter()
+                    .map(|p| format!("\"{}\"", p))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+            if let Some(od) = sniffer.sniff.http.override_destination {
+                output.push_str(&format!("      override-destination: {}\n", od));
+            }
+            output.push_str("    TLS:\n");
+            output.push_str(&format!(
+                "      ports: [{}]\n",
+                sniffer
+                    .sniff
+                    .tls
+                    .ports
+                    .iter()
+                    .map(|p| format!("\"{}\"", p))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+            if let Some(od) = sniffer.sniff.tls.override_destination {
+                output.push_str(&format!("      override-destination: {}\n", od));
+            }
+            output.push_str("    QUIC:\n");
+            output.push_str(&format!(
+                "      ports: [{}]\n",
+                sniffer
+                    .sniff
+                    .quic
+                    .ports
+                    .iter()
+                    .map(|p| format!("\"{}\"", p))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+            if let Some(od) = sniffer.sniff.quic.override_destination {
+                output.push_str(&format!("      override-destination: {}\n", od));
+            }
+            if let Some(skip) = &sniffer.skip_domain {
+                output.push_str("  skip-domain:\n");
+                for d in skip {
+                    output.push_str(&format!("    - \"{}\"\n", d));
+                }
+            }
+            output.push('\n');
+        }
+
+        // DNS settings
+        if let Some(dns) = &config.dns {
+            output.push_str("# DNS 设置\n");
+            output.push_str("dns:\n");
+            output.push_str(&format!("  enable: {}\n", dns.enable));
+            output.push_str(&format!("  listen: {}\n", dns.listen));
+            output.push_str(&format!("  ipv6: {}\n", dns.ipv6));
+            output.push_str(&format!("  prefer-h3: {}\n", dns.prefer_h3));
+            output.push_str(&format!("  enhanced-mode: {}\n", dns.enhanced_mode));
+            output.push_str(&format!("  fake-ip-range: {}\n", dns.fake_ip_range));
+            if let Some(filter) = &dns.fake_ip_filter {
+                output.push_str("  fake-ip-filter:\n");
+                for f in filter {
+                    output.push_str(&format!("    - \"{}\"\n", f));
+                }
+            }
+            output.push_str("  default-nameserver:\n");
+            for ns in &dns.default_nameserver {
+                output.push_str(&format!("    - {}\n", ns));
+            }
+            output.push_str("  nameserver:\n");
+            for ns in &dns.nameserver {
+                output.push_str(&format!("    - {}\n", ns));
+            }
+            if let Some(proxy_server_nameserver) = &dns.proxy_server_nameserver {
+                output.push_str("  proxy-server-nameserver:\n");
+                for ns in proxy_server_nameserver {
+                    output.push_str(&format!("    - {}\n", ns));
+                }
+            }
+            if let Some(fallback) = &dns.fallback {
+                output.push_str("  fallback:\n");
+                for ns in fallback {
+                    output.push_str(&format!("    - {}\n", ns));
+                }
+            }
+            if let Some(ff) = &dns.fallback_filter {
+                output.push_str("  fallback-filter:\n");
+                output.push_str(&format!("    geoip: {}\n", ff.geoip));
+                output.push_str(&format!("    geoip-code: {}\n", ff.geoip_code));
+                if let Some(geosite) = &ff.geosite {
+                    output.push_str("    geosite:\n");
+                    for gs in geosite {
+                        output.push_str(&format!("      - {}\n", gs));
+                    }
+                }
+                output.push_str("    ipcidr:\n");
+                for cidr in &ff.ipcidr {
+                    output.push_str(&format!("      - {}\n", cidr));
+                }
+                if let Some(domains) = &ff.domain {
+                    output.push_str("    domain:\n");
+                    for d in domains {
+                        output.push_str(&format!("      - \"{}\"\n", d));
+                    }
+                }
+            }
+            if let Some(policy) = &dns.nameserver_policy {
+                output.push_str("  nameserver-policy:\n");
+                for (domain, servers) in policy {
+                    output.push_str(&format!("    \"{}\":\n", domain));
+                    for s in servers {
+                        output.push_str(&format!("      - {}\n", s));
+                    }
+                }
+            }
             output.push('\n');
         }
 
@@ -661,7 +870,11 @@ impl ClashConfigBuilder {
                         output.push_str("    header:\n");
                         for (k, v) in header {
                             let vv = serde_yaml::Value::String(v.clone());
-                            output.push_str(&format!("      {}: {}\n", k, format_yaml_value_simple(&vv)));
+                            output.push_str(&format!(
+                                "      {}: {}\n",
+                                k,
+                                format_yaml_value_simple(&vv)
+                            ));
                         }
                     }
                 }
@@ -698,8 +911,15 @@ fn derive_provider_name(url: &str, index: usize) -> String {
             .trim_end_matches(".mrs");
         if !name.is_empty() && name.len() <= 50 {
             // Sanitize: only keep alphanumeric, hyphen, underscore
-            let sanitized: String = name.chars()
-                .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+            let sanitized: String = name
+                .chars()
+                .map(|c| {
+                    if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                        c
+                    } else {
+                        '-'
+                    }
+                })
                 .collect();
             return sanitized;
         }
@@ -737,9 +957,7 @@ fn rule_provider_path(name: &str, format: Option<&str>, template: Option<&str>) 
 
 fn apply_rule_provider_path_template(template: &str, name: &str, ext: &str) -> String {
     if template.contains("{name}") || template.contains("{ext}") {
-        return template
-            .replace("{name}", name)
-            .replace("{ext}", ext);
+        return template.replace("{name}", name).replace("{ext}", ext);
     }
     let mut base = template.to_string();
     if !base.ends_with('/') && !base.ends_with('\\') {
@@ -780,13 +998,19 @@ fn format_proxy_yaml(proxy: &serde_yaml::Value) -> Result<String, serde_yaml::Er
                                 output.push_str("      headers:\n");
                                 if let serde_yaml::Value::Mapping(headers) = v {
                                     for (hk, hv) in headers {
-                                        output.push_str(&format!("        {}: {}\n",
+                                        output.push_str(&format!(
+                                            "        {}: {}\n",
                                             hk.as_str().unwrap_or(""),
-                                            format_yaml_value(hv)));
+                                            format_yaml_value(hv)
+                                        ));
                                     }
                                 }
                             } else {
-                                output.push_str(&format!("      {}: {}\n", k_str, format_yaml_value(v)));
+                                output.push_str(&format!(
+                                    "      {}: {}\n",
+                                    k_str,
+                                    format_yaml_value(v)
+                                ));
                             }
                         }
                     }
@@ -795,9 +1019,11 @@ fn format_proxy_yaml(proxy: &serde_yaml::Value) -> Result<String, serde_yaml::Er
                     output.push_str(&format!("{}grpc-opts:\n", indent));
                     if let serde_yaml::Value::Mapping(opts) = value {
                         for (k, v) in opts {
-                            output.push_str(&format!("      {}: {}\n",
+                            output.push_str(&format!(
+                                "      {}: {}\n",
                                 k.as_str().unwrap_or(""),
-                                format_yaml_value(v)));
+                                format_yaml_value(v)
+                            ));
                         }
                     }
                 }
@@ -810,11 +1036,18 @@ fn format_proxy_yaml(proxy: &serde_yaml::Value) -> Result<String, serde_yaml::Er
                                 output.push_str("      host:\n");
                                 if let serde_yaml::Value::Sequence(hosts) = v {
                                     for host in hosts {
-                                        output.push_str(&format!("        - {}\n", format_yaml_value(host)));
+                                        output.push_str(&format!(
+                                            "        - {}\n",
+                                            format_yaml_value(host)
+                                        ));
                                     }
                                 }
                             } else {
-                                output.push_str(&format!("      {}: {}\n", k_str, format_yaml_value(v)));
+                                output.push_str(&format!(
+                                    "      {}: {}\n",
+                                    k_str,
+                                    format_yaml_value(v)
+                                ));
                             }
                         }
                     }
@@ -831,7 +1064,11 @@ fn format_proxy_yaml(proxy: &serde_yaml::Value) -> Result<String, serde_yaml::Er
                                     output.push_str(&format!("      {}: {}\n", k_str, b));
                                 }
                                 _ => {
-                                    output.push_str(&format!("      {}: {}\n", k_str, format_yaml_value(v)));
+                                    output.push_str(&format!(
+                                        "      {}: {}\n",
+                                        k_str,
+                                        format_yaml_value(v)
+                                    ));
                                 }
                             }
                         }
@@ -847,7 +1084,12 @@ fn format_proxy_yaml(proxy: &serde_yaml::Value) -> Result<String, serde_yaml::Er
                 }
                 _ => {
                     // Regular key-value pairs
-                    output.push_str(&format!("{}{}: {}\n", indent, key_str, format_yaml_value(value)));
+                    output.push_str(&format!(
+                        "{}{}: {}\n",
+                        indent,
+                        key_str,
+                        format_yaml_value(value)
+                    ));
                 }
             }
         }
@@ -909,12 +1151,20 @@ fn format_yaml_value_simple(value: &serde_yaml::Value) -> String {
     match value {
         serde_yaml::Value::String(s) => {
             // Only quote if absolutely necessary (contains YAML special chars that break parsing)
-            if s.contains(':') || s.contains('#') || s.contains('\n') ||
-               s.starts_with(' ') || s.ends_with(' ') ||
-               s.starts_with('"') || s.starts_with('\'') ||
-               s.starts_with('[') || s.starts_with('{') ||
-               s == "true" || s == "false" || s == "null" ||
-               s.is_empty() {
+            if s.contains(':')
+                || s.contains('#')
+                || s.contains('\n')
+                || s.starts_with(' ')
+                || s.ends_with(' ')
+                || s.starts_with('"')
+                || s.starts_with('\'')
+                || s.starts_with('[')
+                || s.starts_with('{')
+                || s == "true"
+                || s == "false"
+                || s == "null"
+                || s.is_empty()
+            {
                 format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
             } else {
                 s.clone()
@@ -923,7 +1173,10 @@ fn format_yaml_value_simple(value: &serde_yaml::Value) -> String {
         serde_yaml::Value::Number(n) => n.to_string(),
         serde_yaml::Value::Bool(b) => b.to_string(),
         serde_yaml::Value::Null => "null".to_string(),
-        _ => serde_yaml::to_string(value).unwrap_or_default().trim().to_string(),
+        _ => serde_yaml::to_string(value)
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
     }
 }
 
@@ -933,13 +1186,26 @@ fn format_yaml_value(value: &serde_yaml::Value) -> String {
         serde_yaml::Value::String(s) => {
             // Always quote strings that might contain special characters
             // or that are proxy names/servers
-            if s.contains(':') || s.contains('#') || s.contains('[') ||
-               s.contains(']') || s.contains('{') || s.contains('}') ||
-               s.contains('&') || s.contains('*') || s.contains('!') ||
-               s.contains('|') || s.contains('>') || s.contains('\'') ||
-               s.contains('"') || s.contains('%') || s.contains('@') ||
-               s.contains('`') || s.starts_with('-') || s.starts_with('?') ||
-               !s.is_ascii() {
+            if s.contains(':')
+                || s.contains('#')
+                || s.contains('[')
+                || s.contains(']')
+                || s.contains('{')
+                || s.contains('}')
+                || s.contains('&')
+                || s.contains('*')
+                || s.contains('!')
+                || s.contains('|')
+                || s.contains('>')
+                || s.contains('\'')
+                || s.contains('"')
+                || s.contains('%')
+                || s.contains('@')
+                || s.contains('`')
+                || s.starts_with('-')
+                || s.starts_with('?')
+                || !s.is_ascii()
+            {
                 // Use double quotes and escape internal quotes
                 format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
             } else if s.is_empty() {
@@ -951,7 +1217,10 @@ fn format_yaml_value(value: &serde_yaml::Value) -> String {
         serde_yaml::Value::Number(n) => n.to_string(),
         serde_yaml::Value::Bool(b) => b.to_string(),
         serde_yaml::Value::Null => "null".to_string(),
-        _ => serde_yaml::to_string(value).unwrap_or_default().trim().to_string(),
+        _ => serde_yaml::to_string(value)
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
     }
 }
 

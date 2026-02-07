@@ -69,15 +69,194 @@ impl Node {
     /// Generate a deduplication key based on protocol, server, port, and credential.
     pub fn dedup_key(&self) -> String {
         match self {
-            Node::Vless(n) => format!("vless:{}:{}:{}", n.server, n.port, n.uuid),
-            Node::Vmess(n) => format!("vmess:{}:{}:{}", n.server, n.port, n.uuid),
-            Node::Shadowsocks(n) => format!("ss:{}:{}:{}:{}", n.server, n.port, n.cipher, n.password),
-            Node::Ssr(n) => format!("ssr:{}:{}:{}:{}:{}", n.server, n.port, n.cipher, n.password, n.protocol),
-            Node::Trojan(n) => format!("trojan:{}:{}:{}", n.server, n.port, n.password),
-            Node::Hysteria(n) => format!("hy:{}:{}:{}", n.server, n.port, n.auth_str.as_deref().unwrap_or("")),
-            Node::Hysteria2(n) => format!("hy2:{}:{}:{}", n.server, n.port, n.password),
-            Node::Tuic(n) => format!("tuic:{}:{}:{}", n.server, n.port, n.uuid.as_deref().or(n.token.as_deref()).unwrap_or("")),
-            Node::WireGuard(n) => format!("wg:{}:{}:{}", n.server, n.port, n.public_key),
+            Node::Vless(n) => {
+                let mut parts = vec![
+                    "vless".to_string(),
+                    n.server.clone(),
+                    n.port.to_string(),
+                    n.uuid.clone(),
+                    format!("network={}", n.network),
+                ];
+                push_opt_str(&mut parts, "flow", n.flow.as_deref());
+                push_opt_bool(&mut parts, "tls", n.tls);
+                push_opt_str(&mut parts, "servername", n.servername.as_deref());
+                push_opt_bool(&mut parts, "skip-cert-verify", n.skip_cert_verify);
+                push_opt_vec(&mut parts, "alpn", &n.alpn);
+                if let Some(reality) = &n.reality_opts {
+                    parts.push(format!("reality={}", reality_key(reality)));
+                }
+                if let Some(ws) = &n.ws_opts {
+                    if let Some(key) = ws_key(ws) {
+                        parts.push(format!("ws={}", key));
+                    }
+                }
+                if let Some(grpc) = &n.grpc_opts {
+                    if let Some(key) = grpc_key(grpc) {
+                        parts.push(format!("grpc={}", key));
+                    }
+                }
+                if let Some(h2) = &n.h2_opts {
+                    if let Some(key) = h2_key(h2) {
+                        parts.push(format!("h2={}", key));
+                    }
+                }
+                push_opt_str(&mut parts, "client-fingerprint", n.client_fingerprint.as_deref());
+                push_opt_str(&mut parts, "packet-encoding", n.packet_encoding.as_deref());
+                parts.join("|")
+            }
+            Node::Vmess(n) => {
+                let network = n.network.as_deref().unwrap_or("tcp");
+                let mut parts = vec![
+                    "vmess".to_string(),
+                    n.server.clone(),
+                    n.port.to_string(),
+                    n.uuid.clone(),
+                    format!("alterId={}", n.alterId),
+                    format!("cipher={}", n.cipher),
+                    format!("network={}", network),
+                ];
+                push_opt_bool(&mut parts, "tls", n.tls);
+                push_opt_bool(&mut parts, "skip-cert-verify", n.skip_cert_verify);
+                push_opt_str(&mut parts, "servername", n.servername.as_deref());
+                if let Some(ws) = &n.ws_opts {
+                    if let Some(key) = ws_key(ws) {
+                        parts.push(format!("ws={}", key));
+                    }
+                }
+                if let Some(grpc) = &n.grpc_opts {
+                    if let Some(key) = grpc_key(grpc) {
+                        parts.push(format!("grpc={}", key));
+                    }
+                }
+                if let Some(h2) = &n.h2_opts {
+                    if let Some(key) = h2_key(h2) {
+                        parts.push(format!("h2={}", key));
+                    }
+                }
+                parts.join("|")
+            }
+            Node::Shadowsocks(n) => {
+                let mut parts = vec![
+                    "ss".to_string(),
+                    n.server.clone(),
+                    n.port.to_string(),
+                    n.cipher.clone(),
+                    n.password.clone(),
+                ];
+                push_opt_str(&mut parts, "plugin", n.plugin.as_deref());
+                push_opt_map(&mut parts, "plugin-opts", &n.plugin_opts);
+                parts.join("|")
+            }
+            Node::Ssr(n) => {
+                let mut parts = vec![
+                    "ssr".to_string(),
+                    n.server.clone(),
+                    n.port.to_string(),
+                    n.cipher.clone(),
+                    n.password.clone(),
+                    format!("protocol={}", n.protocol),
+                    format!("obfs={}", n.obfs),
+                ];
+                push_opt_str(&mut parts, "protocol-param", n.protocol_param.as_deref());
+                push_opt_str(&mut parts, "obfs-param", n.obfs_param.as_deref());
+                push_opt_str(&mut parts, "group", n.group.as_deref());
+                parts.join("|")
+            }
+            Node::Trojan(n) => {
+                let network = n.network.as_deref().unwrap_or("tcp");
+                let mut parts = vec![
+                    "trojan".to_string(),
+                    n.server.clone(),
+                    n.port.to_string(),
+                    n.password.clone(),
+                    format!("network={}", network),
+                ];
+                push_opt_str(&mut parts, "sni", n.sni.as_deref());
+                push_opt_bool(&mut parts, "skip-cert-verify", n.skip_cert_verify);
+                push_opt_vec(&mut parts, "alpn", &n.alpn);
+                if let Some(ws) = &n.ws_opts {
+                    if let Some(key) = ws_key(ws) {
+                        parts.push(format!("ws={}", key));
+                    }
+                }
+                if let Some(grpc) = &n.grpc_opts {
+                    if let Some(key) = grpc_key(grpc) {
+                        parts.push(format!("grpc={}", key));
+                    }
+                }
+                push_opt_str(&mut parts, "client-fingerprint", n.client_fingerprint.as_deref());
+                parts.join("|")
+            }
+            Node::Hysteria(n) => {
+                let mut parts = vec![
+                    "hy".to_string(),
+                    n.server.clone(),
+                    n.port.to_string(),
+                    n.auth_str.clone().unwrap_or_default(),
+                ];
+                push_opt_str(&mut parts, "protocol", n.protocol.as_deref());
+                push_opt_str(&mut parts, "up", n.up.as_deref());
+                push_opt_str(&mut parts, "down", n.down.as_deref());
+                push_opt_str(&mut parts, "obfs", n.obfs.as_deref());
+                push_opt_str(&mut parts, "sni", n.sni.as_deref());
+                push_opt_bool(&mut parts, "skip-cert-verify", n.skip_cert_verify);
+                push_opt_vec(&mut parts, "alpn", &n.alpn);
+                push_opt_str(&mut parts, "fingerprint", n.fingerprint.as_deref());
+                parts.join("|")
+            }
+            Node::Hysteria2(n) => {
+                let mut parts = vec![
+                    "hy2".to_string(),
+                    n.server.clone(),
+                    n.port.to_string(),
+                    n.password.clone(),
+                ];
+                push_opt_str(&mut parts, "ports", n.ports.as_deref());
+                push_opt_str(&mut parts, "obfs", n.obfs.as_deref());
+                push_opt_str(&mut parts, "obfs-password", n.obfs_password.as_deref());
+                push_opt_str(&mut parts, "sni", n.sni.as_deref());
+                push_opt_bool(&mut parts, "skip-cert-verify", n.skip_cert_verify);
+                push_opt_vec(&mut parts, "alpn", &n.alpn);
+                push_opt_str(&mut parts, "fingerprint", n.fingerprint.as_deref());
+                push_opt_str(&mut parts, "up", n.up.as_deref());
+                push_opt_str(&mut parts, "down", n.down.as_deref());
+                parts.join("|")
+            }
+            Node::Tuic(n) => {
+                let id = n.uuid.as_deref().or(n.token.as_deref()).unwrap_or("");
+                let mut parts = vec![
+                    "tuic".to_string(),
+                    n.server.clone(),
+                    n.port.to_string(),
+                    id.to_string(),
+                ];
+                push_opt_str(&mut parts, "password", n.password.as_deref());
+                push_opt_str(&mut parts, "sni", n.sni.as_deref());
+                push_opt_bool(&mut parts, "skip-cert-verify", n.skip_cert_verify);
+                push_opt_vec(&mut parts, "alpn", &n.alpn);
+                push_opt_bool(&mut parts, "disable-sni", n.disable_sni);
+                push_opt_bool(&mut parts, "reduce-rtt", n.reduce_rtt);
+                push_opt_str(&mut parts, "udp-relay-mode", n.udp_relay_mode.as_deref());
+                push_opt_str(&mut parts, "congestion-controller", n.congestion_controller.as_deref());
+                parts.join("|")
+            }
+            Node::WireGuard(n) => {
+                let mut parts = vec![
+                    "wg".to_string(),
+                    n.server.clone(),
+                    n.port.to_string(),
+                    n.public_key.clone(),
+                ];
+                push_opt_str(&mut parts, "private-key", Some(&n.private_key));
+                push_opt_str(&mut parts, "ip", n.ip.as_deref());
+                push_opt_str(&mut parts, "ipv6", n.ipv6.as_deref());
+                push_opt_vec(&mut parts, "allowed-ips", &n.allowed_ips);
+                push_opt_str(&mut parts, "pre-shared-key", n.pre_shared_key.as_deref());
+                push_opt_vec_u16(&mut parts, "reserved", &n.reserved);
+                push_opt_u32(&mut parts, "mtu", n.mtu);
+                push_opt_vec(&mut parts, "dns", &n.dns);
+                parts.join("|")
+            }
         }
     }
 
@@ -126,6 +305,105 @@ impl Node {
         }
     }
 }
+
+fn join_kv_map(map: &IndexMap<String, String>) -> String {
+    map.iter()
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn push_opt_str(parts: &mut Vec<String>, key: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        if !value.is_empty() {
+            parts.push(format!("{key}={value}"));
+        }
+    }
+}
+
+fn push_opt_bool(parts: &mut Vec<String>, key: &str, value: Option<bool>) {
+    if let Some(value) = value {
+        parts.push(format!("{key}={value}"));
+    }
+}
+
+fn push_opt_u32(parts: &mut Vec<String>, key: &str, value: Option<u32>) {
+    if let Some(value) = value {
+        parts.push(format!("{key}={value}"));
+    }
+}
+
+fn push_opt_vec(parts: &mut Vec<String>, key: &str, value: &Option<Vec<String>>) {
+    if let Some(values) = value {
+        if !values.is_empty() {
+            parts.push(format!("{key}={}", values.join(",")));
+        }
+    }
+}
+
+fn push_opt_vec_u16(parts: &mut Vec<String>, key: &str, value: &Option<Vec<u16>>) {
+    if let Some(values) = value {
+        if !values.is_empty() {
+            let joined = values.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(",");
+            parts.push(format!("{key}={}", joined));
+        }
+    }
+}
+
+fn push_opt_map(parts: &mut Vec<String>, key: &str, value: &Option<IndexMap<String, String>>) {
+    if let Some(values) = value {
+        if !values.is_empty() {
+            parts.push(format!("{key}={}", join_kv_map(values)));
+        }
+    }
+}
+
+fn ws_key(ws: &WsOpts) -> Option<String> {
+    let mut parts = Vec::new();
+    push_opt_str(&mut parts, "path", ws.path.as_deref());
+    if let Some(headers) = &ws.headers {
+        if !headers.is_empty() {
+            parts.push(format!("headers={}", join_kv_map(headers)));
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(";"))
+    }
+}
+
+fn grpc_key(grpc: &GrpcOpts) -> Option<String> {
+    let mut parts = Vec::new();
+    push_opt_str(&mut parts, "service", grpc.grpc_service_name.as_deref());
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(";"))
+    }
+}
+
+fn h2_key(h2: &H2Opts) -> Option<String> {
+    let mut parts = Vec::new();
+    push_opt_str(&mut parts, "path", h2.path.as_deref());
+    if let Some(host) = &h2.host {
+        if !host.is_empty() {
+            parts.push(format!("host={}", host.join(",")));
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(";"))
+    }
+}
+
+fn reality_key(reality: &RealityOpts) -> String {
+    let mut parts = vec![format!("pk={}", reality.public_key)];
+    push_opt_str(&mut parts, "sid", reality.short_id.as_deref());
+    parts.join(";")
+}
+
 
 // ============================================================================
 // VLESS Node

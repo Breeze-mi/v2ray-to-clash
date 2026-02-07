@@ -3,6 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 use regex::Regex;
+use url::Url;
+use std::sync::OnceLock;
 
 use indexmap::IndexMap;
 
@@ -572,13 +574,32 @@ fn split_input_items(content: &str) -> Vec<String> {
     result
 }
 
+static SCHEME_WITH_HTTP_RE: OnceLock<Regex> = OnceLock::new();
+static SCHEME_PROXY_RE: OnceLock<Regex> = OnceLock::new();
+
 fn split_by_schemes(item: &str) -> Vec<String> {
     if !item.contains("://") {
         return vec![item.to_string()];
     }
 
-    let re = Regex::new(r"(?i)(?:https?|vless|vmess|ssr|ss|trojan|hysteria2|hy2|hysteria|hy|tuic|wireguard|wg)://")
-        .expect("valid scheme regex");
+    let trimmed = item.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let starts_with_http = lower.starts_with("http://") || lower.starts_with("https://");
+    if starts_with_http && Url::parse(trimmed).is_ok() {
+        return vec![trimmed.to_string()];
+    }
+
+    let re = if starts_with_http {
+        SCHEME_WITH_HTTP_RE.get_or_init(|| {
+            Regex::new(r"(?i)(?:https?|vless|vmess|ssr|ss|trojan|hysteria2|hy2|hysteria|hy|tuic|wireguard|wg)://")
+                .expect("valid scheme regex")
+        })
+    } else {
+        SCHEME_PROXY_RE.get_or_init(|| {
+            Regex::new(r"(?i)(?:vless|vmess|ssr|ss|trojan|hysteria2|hy2|hysteria|hy|tuic|wireguard|wg)://")
+                .expect("valid scheme regex")
+        })
+    };
     let mut indices: Vec<usize> = re.find_iter(item).map(|m| m.start()).collect();
     if indices.len() <= 1 {
         return vec![item.to_string()];

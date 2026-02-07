@@ -70,8 +70,7 @@ pub fn parse_ini_config(content: &str) -> Result<ParsedIniConfig> {
             } else if key == "ruleset" {
                 if let Some((target, url_or_rule)) = parse_ruleset_line(value) {
                     // Check if it's an inline rule (starts with [])
-                    if url_or_rule.starts_with("[]") {
-                        let rule_content = url_or_rule.strip_prefix("[]").unwrap();
+                    if let Some(rule_content) = url_or_rule.strip_prefix("[]") {
                         // Parse inline rule like "GEOIP,CN" or "FINAL"
                         if let Some(rule) = parse_inline_rule(rule_content, &target) {
                             rules.push(rule);
@@ -262,8 +261,7 @@ fn parse_interval_param(s: &str) -> (Option<u32>, Option<u32>, Option<u32>) {
 
 /// Parse a single proxy matcher
 fn parse_proxy_matcher(part: &str) -> ProxyMatcher {
-    if part.starts_with("[]") {
-        let inner = part.strip_prefix("[]").unwrap();
+    if let Some(inner) = part.strip_prefix("[]") {
         if inner == "DIRECT" || inner == "REJECT" {
             ProxyMatcher::Special(inner.to_string())
         } else {

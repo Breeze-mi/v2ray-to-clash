@@ -128,6 +128,13 @@ impl HttpClient {
 
 impl Default for HttpClient {
     fn default() -> Self {
-        Self::new(30).expect("Failed to create default HTTP client")
+        Self::new(30).unwrap_or_else(|_| {
+            let client = Client::builder()
+                .timeout(Duration::from_secs(30))
+                .user_agent(DEFAULT_USER_AGENT)
+                .build()
+                .unwrap_or_else(|_| Client::new());
+            Self { client }
+        })
     }
 }

@@ -488,7 +488,7 @@ impl ClashConfigBuilder {
             proxies.push(serde_yaml::Value::String(name.clone()));
         }
         proxy_group.insert("proxies".into(), serde_yaml::Value::Sequence(proxies));
-        groups.push(serde_yaml::to_value(proxy_group).unwrap());
+        groups.push(serde_yaml::to_value(proxy_group).unwrap_or(serde_yaml::Value::Null));
 
         // Auto group (url-test)
         let mut auto_group: IndexMap<String, serde_yaml::Value> = IndexMap::new();
@@ -499,7 +499,7 @@ impl ClashConfigBuilder {
         auto_group.insert("proxies".into(), serde_yaml::Value::Sequence(
             node_names.iter().map(|n| serde_yaml::Value::String(n.clone())).collect()
         ));
-        groups.push(serde_yaml::to_value(auto_group).unwrap());
+        groups.push(serde_yaml::to_value(auto_group).unwrap_or(serde_yaml::Value::Null));
 
         // Direct group
         let mut direct_group: IndexMap<String, serde_yaml::Value> = IndexMap::new();
@@ -508,7 +508,7 @@ impl ClashConfigBuilder {
         direct_group.insert("proxies".into(), serde_yaml::Value::Sequence(vec![
             serde_yaml::Value::String("DIRECT".into()),
         ]));
-        groups.push(serde_yaml::to_value(direct_group).unwrap());
+        groups.push(serde_yaml::to_value(direct_group).unwrap_or(serde_yaml::Value::Null));
 
         // Reject group
         let mut reject_group: IndexMap<String, serde_yaml::Value> = IndexMap::new();
@@ -518,7 +518,7 @@ impl ClashConfigBuilder {
             serde_yaml::Value::String("REJECT".into()),
             serde_yaml::Value::String("DIRECT".into()),
         ]));
-        groups.push(serde_yaml::to_value(reject_group).unwrap());
+        groups.push(serde_yaml::to_value(reject_group).unwrap_or(serde_yaml::Value::Null));
 
         // Fallback group
         let mut fish_group: IndexMap<String, serde_yaml::Value> = IndexMap::new();
@@ -530,7 +530,7 @@ impl ClashConfigBuilder {
             serde_yaml::Value::String("♻️ 自动选择".into()),
         ];
         fish_group.insert("proxies".into(), serde_yaml::Value::Sequence(fish_proxies));
-        groups.push(serde_yaml::to_value(fish_group).unwrap());
+        groups.push(serde_yaml::to_value(fish_group).unwrap_or(serde_yaml::Value::Null));
 
         self.config.proxy_groups = groups;
         self

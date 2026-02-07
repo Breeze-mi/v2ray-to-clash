@@ -5,6 +5,7 @@ use base64::{engine::general_purpose::{STANDARD, URL_SAFE, URL_SAFE_NO_PAD}, Eng
 use indexmap::IndexMap;
 use url::Url;
 use regex::Regex;
+use std::sync::OnceLock;
 
 use crate::error::{ConvertError, Result};
 use crate::node::*;
@@ -86,13 +87,26 @@ fn clean_subscription_input(content: &str) -> String {
     content.trim().to_string()
 }
 /// Split concatenated proxy links within a single line.
+static START_PROXY_RE: OnceLock<Regex> = OnceLock::new();
+static PROXY_RE: OnceLock<Regex> = OnceLock::new();
+
 fn split_proxy_links(line: &str) -> Vec<String> {
     if !line.contains("://") {
         return vec![line.to_string()];
     }
 
-    let re = Regex::new(r"(?i)(?:vless|vmess|ssr|ss|trojan|hysteria2|hy2|hysteria|hy|tuic|wireguard|wg)://")
-        .expect("valid proxy scheme regex");
+    let start_re = START_PROXY_RE.get_or_init(|| {
+        Regex::new(r"(?i)^(?:vless|vmess|ssr|ss|trojan|hysteria2|hy2|hysteria|hy|tuic|wireguard|wg)://")
+            .expect("valid proxy scheme regex")
+    });
+    if !start_re.is_match(line) {
+        return vec![line.to_string()];
+    }
+
+    let re = PROXY_RE.get_or_init(|| {
+        Regex::new(r"(?i)(?:vless|vmess|ssr|ss|trojan|hysteria2|hy2|hysteria|hy|tuic|wireguard|wg)://")
+            .expect("valid proxy scheme regex")
+    });
     let mut indices: Vec<usize> = re.find_iter(line).map(|m| m.start()).collect();
     if indices.len() <= 1 {
         return vec![line.to_string()];

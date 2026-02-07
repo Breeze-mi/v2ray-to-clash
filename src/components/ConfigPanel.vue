@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, computed } from 'vue';
 import {
   NInput,
@@ -11,6 +11,7 @@ import {
   NIcon,
   NSwitch,
   NProgress,
+  NInputNumber,
   type SelectOption,
 } from 'naive-ui';
 import { RefreshOutline, EyeOutline } from '@vicons/ionicons5';
@@ -126,7 +127,6 @@ async function validateRenameRegex() {
         size="small"
       />
     </div>
-
     <!-- 高级选项 -->
     <NCollapse>
       <NCollapseItem title="高级选项" name="advanced">
@@ -214,7 +214,7 @@ async function validateRenameRegex() {
                     <template #trigger>
                       <span class="i-carbon-help text-slate-400 w-3 h-3 cursor-help"></span>
                     </template>
-                   
+                    将 external-controller 绑定到 0.0.0.0:9090，建议设置 Secret
                   </NTooltip>
                 </div>
                 <NSwitch v-model:value="store.apiListenLan" size="small" />
@@ -248,6 +248,7 @@ async function validateRenameRegex() {
                 <template #trigger>
                   <span class="i-carbon-help text-slate-400 w-3 h-3 cursor-help"></span>
                 </template>
+                设置后会写入 secret，用于远程控制鉴权
               </NTooltip>
             </div>
             <NInput
@@ -255,6 +256,49 @@ async function validateRenameRegex() {
               placeholder="建议设置一个随机字符串"
               size="small"
             />
+          </div>
+
+          <!-- 规则集下载 -->
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center gap-1">
+              <span class="text-xs text-slate-500">规则集下载</span>
+              <NTooltip>
+                <template #trigger>
+                  <span class="i-carbon-help text-slate-400 w-3 h-3 cursor-help"></span>
+                </template>
+                可设置下载代理/请求头/大小限制，以及规则集路径策略
+              </NTooltip>
+            </div>
+            <div class="flex flex-col gap-2 bg-slate-50 rounded-md p-2">
+              <div class="flex justify-between items-center py-1">
+                <span class="text-xs text-slate-600">规则集路径留空</span>
+                <NSwitch v-model:value="store.ruleProviderPathOmit" size="small" />
+              </div>
+              <NInput
+                v-model:value="store.ruleProviderPathTemplate"
+                placeholder="路径模板（例：./ruleset/{name}.{ext}）"
+                size="small"
+                :disabled="store.ruleProviderPathOmit"
+              />
+              <NInput
+                v-model:value="store.ruleProviderProxy"
+                placeholder="下载代理（例：DIRECT 或 代理组名）"
+                size="small"
+              />
+              <NInput
+                v-model:value="store.ruleProviderHeader"
+                type="textarea"
+                :rows="3"
+                placeholder="请求头（每行一条，例：User-Agent: xxx）"
+                size="small"
+              />
+              <NInputNumber
+                v-model:value="store.ruleProviderSizeLimit"
+                :min="0"
+                placeholder="大小限制（字节，0/空表示不限制）"
+                size="small"
+              />
+            </div>
           </div>
         </div>
       </NCollapseItem>
@@ -366,3 +410,5 @@ async function validateRenameRegex() {
     </div>
   </div>
 </template>
+
+

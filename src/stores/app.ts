@@ -18,6 +18,11 @@ export const useAppStore = defineStore('app', {
     skipCertVerify: false,
     apiListenLan: true,
     apiSecret: '',
+    ruleProviderProxy: '',
+    ruleProviderHeader: '',
+    ruleProviderSizeLimit: null,
+    ruleProviderPathOmit: false,
+    ruleProviderPathTemplate: '',
     loading: false,
     previewing: false,
     error: null,
@@ -75,6 +80,11 @@ export const useAppStore = defineStore('app', {
           skip_cert_verify: this.skipCertVerify,
           api_listen_lan: this.apiListenLan,
           api_secret: this.apiSecret || undefined,
+          rule_provider_proxy: this.ruleProviderProxy || undefined,
+          rule_provider_header: this.ruleProviderHeader || undefined,
+          rule_provider_size_limit: this.ruleProviderSizeLimit ?? undefined,
+          rule_provider_path_omit: this.ruleProviderPathOmit,
+          rule_provider_path_template: this.ruleProviderPathTemplate || undefined,
           timeout_secs: 30,
         };
 
@@ -142,6 +152,11 @@ export const useAppStore = defineStore('app', {
       this.skipCertVerify = false;
       this.apiListenLan = true;
       this.apiSecret = '';
+      this.ruleProviderProxy = '';
+      this.ruleProviderHeader = '';
+      this.ruleProviderSizeLimit = null;
+      this.ruleProviderPathOmit = false;
+      this.ruleProviderPathTemplate = '';
       this.result = null;
       this.previewNodes = [];
       this.previewSubscriptionInfo = null;

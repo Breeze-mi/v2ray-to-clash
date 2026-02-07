@@ -3,7 +3,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::clash_config::ClashConfigBuilder;
+use indexmap::IndexMap;
+
+use crate::clash_config::{ClashConfigBuilder, RuleProviderOptions};
 use crate::error::{ConvertError, Result};
 use crate::filter::{filter_nodes, rename_nodes, deduplicate_nodes};
 use crate::http_client::{HttpClient, SubscriptionInfo};
@@ -71,6 +73,27 @@ pub struct ConvertRequest {
     /// Secret for API access (optional)
     #[serde(default)]
     pub api_secret: Option<String>,
+
+    /// Proxy for rule-providers download (optional)
+    #[serde(default)]
+    pub rule_provider_proxy: Option<String>,
+
+    /// Extra headers for rule-providers download (optional)
+    /// Format: "Header: value" per line
+    #[serde(default)]
+    pub rule_provider_header: Option<String>,
+
+    /// Size limit for rule-providers download (bytes)
+    #[serde(default)]
+    pub rule_provider_size_limit: Option<u32>,
+
+    /// Omit rule-providers path to let core generate it
+    #[serde(default)]
+    pub rule_provider_path_omit: bool,
+
+    /// Custom rule-providers path template (supports {name}, {ext})
+    #[serde(default)]
+    pub rule_provider_path_template: Option<String>,
 }
 
 fn default_timeout() -> u64 {
@@ -223,6 +246,16 @@ impl SubscriptionEngine {
             .filter(|s| !s.is_empty());
 
         builder = builder.with_api_settings(external_controller, api_secret);
+
+        // Rule-provider download options
+        let rule_provider_options = RuleProviderOptions {
+            proxy: normalize_non_empty(request.rule_provider_proxy.as_deref()),
+            header: parse_rule_provider_header(request.rule_provider_header.as_deref()),
+            size_limit: request.rule_provider_size_limit.filter(|v| *v > 0),
+            path_omit: request.rule_provider_path_omit,
+            path_template: normalize_non_empty(request.rule_provider_path_template.as_deref()),
+        };
+        builder = builder.with_rule_provider_options(rule_provider_options);
 
         if request.enable_tun {
             builder = builder.with_tun();
@@ -507,4 +540,42 @@ fn decode_subscription_body(body: &str) -> String {
 
     // Not base64 or failed to decode, return as-is
     body
+}
+
+fn normalize_non_empty(input: Option<&str>) -> Option<String> {
+    input
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn parse_rule_provider_header(raw: Option<&str>) -> Option<IndexMap<String, String>> {
+    let raw = raw?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+
+    let mut headers = IndexMap::new();
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        let (key, value) = if let Some((k, v)) = line.split_once(':') {
+            (k, v)
+        } else if let Some((k, v)) = line.split_once('=') {
+            (k, v)
+        } else {
+            continue;
+        };
+
+        let key = key.trim();
+        let value = value.trim();
+        if key.is_empty() || value.is_empty() {
+            continue;
+        }
+        headers.insert(key.to_string(), value.to_string());
+    }
+
+    if headers.is_empty() { None } else { Some(headers) }
 }

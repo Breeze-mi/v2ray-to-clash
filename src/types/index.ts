@@ -16,6 +16,11 @@ export interface ConvertRequest {
   skip_cert_verify?: boolean;
   api_listen_lan?: boolean;
   api_secret?: string;
+  rule_provider_proxy?: string;
+  rule_provider_header?: string;
+  rule_provider_size_limit?: number;
+  rule_provider_path_omit?: boolean;
+  rule_provider_path_template?: string;
 }
 
 export interface SubscriptionInfo {
@@ -71,6 +76,11 @@ export interface AppState {
   skipCertVerify: boolean;
   apiListenLan: boolean;
   apiSecret: string;
+  ruleProviderProxy: string;
+  ruleProviderHeader: string;
+  ruleProviderSizeLimit: number | null;
+  ruleProviderPathOmit: boolean;
+  ruleProviderPathTemplate: string;
 
   // State
   loading: boolean;

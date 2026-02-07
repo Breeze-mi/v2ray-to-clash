@@ -109,7 +109,26 @@ pub struct RuleProvider {
     #[serde(rename = "type")]
     pub provider_type: String,
     pub behavior: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proxy: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header: Option<IndexMap<String, String>>,
+    #[serde(rename = "size-limit", skip_serializing_if = "Option::is_none")]
+    pub size_limit: Option<u32>,
     pub interval: u32,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RuleProviderOptions {
+    pub proxy: Option<String>,
+    pub header: Option<IndexMap<String, String>>,
+    pub size_limit: Option<u32>,
+    pub path_omit: bool,
+    pub path_template: Option<String>,
 }
 
 /// Profile configuration for storing state
@@ -298,6 +317,7 @@ pub struct ClashConfigBuilder {
     enable_tfo: bool,
     /// Global skip-cert-verify switch
     skip_cert_verify: bool,
+    rule_provider_options: RuleProviderOptions,
 }
 
 impl ClashConfigBuilder {
@@ -308,6 +328,7 @@ impl ClashConfigBuilder {
             enable_udp: true,
             enable_tfo: false,
             skip_cert_verify: false,
+            rule_provider_options: RuleProviderOptions::default(),
         }
     }
 
@@ -336,6 +357,12 @@ impl ClashConfigBuilder {
     pub fn with_api_settings(mut self, external_controller: String, secret: Option<String>) -> Self {
         self.config.external_controller = Some(external_controller);
         self.config.secret = secret;
+        self
+    }
+
+    /// Set rule-provider download options
+    pub fn with_rule_provider_options(mut self, options: RuleProviderOptions) -> Self {
+        self.rule_provider_options = options;
         self
     }
 
@@ -401,12 +428,28 @@ impl ClashConfigBuilder {
             // Derive provider name from URL
             let provider_name = derive_provider_name(&clean_url, idx);
 
+            let format = infer_rule_provider_format(&clean_url).map(|s| s.to_string());
+            let path = if self.rule_provider_options.path_omit {
+                None
+            } else {
+                Some(rule_provider_path(
+                    &provider_name,
+                    format.as_deref(),
+                    self.rule_provider_options.path_template.as_deref(),
+                ))
+            };
+
             rule_providers.push(RuleProvider {
                 name: provider_name.clone(),
                 url: clean_url.clone(),
                 target: target.clone(),
                 provider_type: "http".to_string(),
                 behavior: behavior.to_string(),
+                format,
+                path,
+                proxy: self.rule_provider_options.proxy.clone(),
+                header: self.rule_provider_options.header.clone(),
+                size_limit: self.rule_provider_options.size_limit,
                 interval: 86400,
             });
 
@@ -599,16 +642,32 @@ impl ClashConfigBuilder {
             output.push_str("# 规则集\n");
             output.push_str("rule-providers:\n");
             for rp in &config.rule_providers {
-                let format = infer_rule_provider_format(&rp.url);
-                let path = rule_provider_path(&rp.name, format);
                 output.push_str(&format!("  {}:\n", rp.name));
                 output.push_str(&format!("    type: {}\n", rp.provider_type));
                 output.push_str(&format!("    behavior: {}\n", rp.behavior));
                 output.push_str(&format!("    url: \"{}\"\n", rp.url));
-                if let Some(fmt) = format {
+                if let Some(fmt) = &rp.format {
                     output.push_str(&format!("    format: {}\n", fmt));
                 }
-                output.push_str(&format!("    path: \"{}\"\n", path));
+                if let Some(path) = &rp.path {
+                    output.push_str(&format!("    path: \"{}\"\n", path));
+                }
+                if let Some(proxy) = &rp.proxy {
+                    let v = serde_yaml::Value::String(proxy.clone());
+                    output.push_str(&format!("    proxy: {}\n", format_yaml_value_simple(&v)));
+                }
+                if let Some(header) = &rp.header {
+                    if !header.is_empty() {
+                        output.push_str("    header:\n");
+                        for (k, v) in header {
+                            let vv = serde_yaml::Value::String(v.clone());
+                            output.push_str(&format!("      {}: {}\n", k, format_yaml_value_simple(&vv)));
+                        }
+                    }
+                }
+                if let Some(size_limit) = rp.size_limit {
+                    output.push_str(&format!("    size-limit: {}\n", size_limit));
+                }
                 output.push_str(&format!("    interval: {}\n", rp.interval));
             }
             output.push('\n');
@@ -662,14 +721,31 @@ fn infer_rule_provider_format(url: &str) -> Option<&'static str> {
     }
 }
 
-/// Build a ruleset path matching the inferred format.
-fn rule_provider_path(name: &str, format: Option<&str>) -> String {
+/// Build a ruleset path matching the inferred format or template.
+fn rule_provider_path(name: &str, format: Option<&str>, template: Option<&str>) -> String {
     let ext = match format {
         Some("mrs") => "mrs",
         Some("text") => "txt",
         _ => "yaml",
     };
-    format!("./ruleset/{}.{}", name, ext)
+    if let Some(tpl) = template {
+        apply_rule_provider_path_template(tpl, name, ext)
+    } else {
+        format!("./ruleset/{}.{}", name, ext)
+    }
+}
+
+fn apply_rule_provider_path_template(template: &str, name: &str, ext: &str) -> String {
+    if template.contains("{name}") || template.contains("{ext}") {
+        return template
+            .replace("{name}", name)
+            .replace("{ext}", ext);
+    }
+    let mut base = template.to_string();
+    if !base.ends_with('/') && !base.ends_with('\\') {
+        base.push('/');
+    }
+    format!("{}{}.{}", base, name, ext)
 }
 
 /// Format a single proxy node to YAML with proper indentation and quoting

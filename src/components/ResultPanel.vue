@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed } from 'vue';
 import {
   NButton,
@@ -13,6 +13,7 @@ import {
 import {
   CopyOutline,
   DownloadOutline,
+  TrashOutline,
   CheckmarkCircleOutline,
   WarningOutline,
 } from '@vicons/ionicons5';
@@ -151,6 +152,17 @@ function downloadYaml() {
             </template>
             下载为 clash-config.yaml
           </NTooltip>
+          <NTooltip>
+            <template #trigger>
+              <NButton size="small" :disabled="!store.result" @click="store.clearResult">
+                <template #icon>
+                  <NIcon><TrashOutline /></NIcon>
+                </template>
+                清空
+              </NButton>
+            </template>
+            清空当前配置
+          </NTooltip>
         </div>
         <span v-if="store.result" class="flex items-center gap-1 text-xs text-emerald-600 font-medium">
           <NIcon size="14" color="#10b981"><CheckmarkCircleOutline /></NIcon>
@@ -235,3 +247,4 @@ function downloadYaml() {
     </div>
   </div>
 </template>
+

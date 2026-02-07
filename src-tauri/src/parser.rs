@@ -1,9 +1,10 @@
-//! Universal node parser supporting multiple proxy protocols
+﻿//! Universal node parser supporting multiple proxy protocols
 //! Parses VLESS, VMess, Shadowsocks, ShadowsocksR, Trojan, Hysteria2, TUIC URLs
 
 use base64::{engine::general_purpose::{STANDARD, URL_SAFE, URL_SAFE_NO_PAD}, Engine as _};
 use indexmap::IndexMap;
 use url::Url;
+use regex::Regex;
 
 use crate::error::{ConvertError, Result};
 use crate::node::*;
@@ -36,16 +37,23 @@ pub fn parse_subscription_content(content: &str) -> Result<Vec<Node>> {
             continue;
         }
 
-        match parse_single_link(line) {
-            Ok(node) => nodes.push(node),
-            Err(e) => {
-                // Collect warning but continue parsing other nodes
-                let truncated_link = if line.chars().count() > 50 {
-                    format!("{}...", line.chars().take(50).collect::<String>())
-                } else {
-                    line.to_string()
-                };
-                warnings.push(format!("{}: {}", truncated_link, e));
+        for part in split_proxy_links(line) {
+            let part = part.trim();
+            if part.is_empty() {
+                continue;
+            }
+
+            match parse_single_link(part) {
+                Ok(node) => nodes.push(node),
+                Err(e) => {
+                    // Collect warning but continue parsing other nodes
+                    let truncated_link = if part.chars().count() > 50 {
+                        format!("{}...", part.chars().take(50).collect::<String>())
+                    } else {
+                        part.to_string()
+                    };
+                    warnings.push(format!("{}: {}", truncated_link, e));
+                }
             }
         }
     }
@@ -76,6 +84,32 @@ fn clean_subscription_input(content: &str) -> String {
     let content = content.replace("\r\n", "\n").replace('\r', "\n");
 
     content.trim().to_string()
+}
+/// Split concatenated proxy links within a single line.
+fn split_proxy_links(line: &str) -> Vec<String> {
+    if !line.contains("://") {
+        return vec![line.to_string()];
+    }
+
+    let re = Regex::new(r"(?i)(?:vless|vmess|ssr|ss|trojan|hysteria2|hy2|hysteria|hy|tuic|wireguard|wg)://")
+        .expect("valid proxy scheme regex");
+    let mut indices: Vec<usize> = re.find_iter(line).map(|m| m.start()).collect();
+    if indices.len() <= 1 {
+        return vec![line.to_string()];
+    }
+
+    indices.push(line.len());
+    let mut result = Vec::new();
+    for i in 0..indices.len() - 1 {
+        let start = indices[i];
+        let end = indices[i + 1];
+        let part = line[start..end].trim();
+        if !part.is_empty() {
+            result.push(part.to_string());
+        }
+    }
+
+    result
 }
 
 /// Check if content looks like base64 encoded
@@ -1235,3 +1269,5 @@ fn parse_host_port(s: &str) -> Result<(String, u16)> {
 
     Ok((host.to_string(), port))
 }
+
+

@@ -1,7 +1,8 @@
-//! Main subscription conversion engine
+﻿//! Main subscription conversion engine
 //! Orchestrates fetching, parsing, filtering, and YAML generation
 
 use serde::{Deserialize, Serialize};
+use regex::Regex;
 
 use indexmap::IndexMap;
 
@@ -312,22 +313,8 @@ impl SubscriptionEngine {
         // Step 1: Clean input - remove BOM, normalize line endings, trim whitespace
         let content = clean_input(content);
 
-        // Step 2: Split by | or newlines (subconverter compatible)
-        let items: Vec<&str> = if content.contains('|') && !content.contains("://") {
-            // Pure URL list separated by |
-            content.split('|').collect()
-        } else if content.contains('|') {
-            // Could be URLs separated by | or a link with | in parameters
-            // If it looks like multiple URLs, split; otherwise treat as single
-            if content.matches("http").count() > 1 {
-                content.split('|').collect()
-            } else {
-                vec![content.as_str()]
-            }
-        } else {
-            // Split by newlines
-            content.lines().collect()
-        };
+        // Step 2: Split by separators and scheme prefixes (supports concatenated links)
+        let items = split_input_items(&content);
 
         // Step 3: Process each item
         let mut result_lines = Vec::new();
@@ -547,6 +534,69 @@ fn normalize_non_empty(input: Option<&str>) -> Option<String> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
 }
+/// Split mixed input into individual items by delimiters or known scheme prefixes.
+fn split_input_items(content: &str) -> Vec<String> {
+    let content = content.trim();
+    if content.is_empty() {
+        return Vec::new();
+    }
+
+    // First, split by common delimiters
+    let base_items: Vec<&str> = if content.contains('|') && !content.contains("://") {
+        content.split('|').collect()
+    } else if content.contains('|') {
+        // Could be URLs separated by | or a link with | in parameters
+        if content.matches("http").count() > 1 {
+            content.split('|').collect()
+        } else {
+            vec![content]
+        }
+    } else {
+        content.lines().collect()
+    };
+
+    let mut result = Vec::new();
+    for item in base_items {
+        let item = item.trim();
+        if item.is_empty() {
+            continue;
+        }
+        for sub in split_by_schemes(item) {
+            let sub = sub.trim();
+            if !sub.is_empty() {
+                result.push(sub.to_string());
+            }
+        }
+    }
+
+    result
+}
+
+fn split_by_schemes(item: &str) -> Vec<String> {
+    if !item.contains("://") {
+        return vec![item.to_string()];
+    }
+
+    let re = Regex::new(r"(?i)(?:https?|vless|vmess|ssr|ss|trojan|hysteria2|hy2|hysteria|hy|tuic|wireguard|wg)://")
+        .expect("valid scheme regex");
+    let mut indices: Vec<usize> = re.find_iter(item).map(|m| m.start()).collect();
+    if indices.len() <= 1 {
+        return vec![item.to_string()];
+    }
+
+    indices.push(item.len());
+    let mut result = Vec::new();
+    for i in 0..indices.len() - 1 {
+        let start = indices[i];
+        let end = indices[i + 1];
+        let part = item[start..end].trim();
+        if !part.is_empty() {
+            result.push(part.to_string());
+        }
+    }
+
+    result
+}
 
 fn parse_rule_provider_header(raw: Option<&str>) -> Option<IndexMap<String, String>> {
     let raw = raw?.trim();
@@ -579,3 +629,4 @@ fn parse_rule_provider_header(raw: Option<&str>) -> Option<IndexMap<String, Stri
 
     if headers.is_empty() { None } else { Some(headers) }
 }
+
